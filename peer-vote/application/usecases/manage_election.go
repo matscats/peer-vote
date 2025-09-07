@@ -8,6 +8,7 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
+	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
 )
 
 // GetElectionRequest representa uma requisição para obter eleição
@@ -68,16 +69,19 @@ type GetElectionResultsResponse struct {
 type ManageElectionUseCase struct {
 	electionRepo      repositories.ElectionRepository
 	validationService services.VotingValidationService
+	chainManager      *blockchain.ChainManager
 }
 
 // NewManageElectionUseCase cria um novo caso de uso de gerenciamento de eleições
 func NewManageElectionUseCase(
 	electionRepo repositories.ElectionRepository,
 	validationService services.VotingValidationService,
+	chainManager *blockchain.ChainManager,
 ) *ManageElectionUseCase {
 	return &ManageElectionUseCase{
 		electionRepo:      electionRepo,
 		validationService: validationService,
+		chainManager:      chainManager,
 	}
 }
 
@@ -88,9 +92,9 @@ func (uc *ManageElectionUseCase) GetElection(ctx context.Context, request *GetEl
 	}
 
 	// Obter eleição
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	// Obter resultados
@@ -115,13 +119,22 @@ func (uc *ManageElectionUseCase) ListElections(ctx context.Context, request *Lis
 		request = &ListElectionsRequest{}
 	}
 
-	// Escolher método de listagem baseado nos filtros
-	if !request.CreatedBy.IsEmpty() {
-		elections, err = uc.electionRepo.ListElectionsByCreator(ctx, request.CreatedBy)
-	} else if request.ActiveOnly {
-		elections, err = uc.electionRepo.ListActiveElections(ctx)
+	// Buscar eleições da blockchain
+	if request.ActiveOnly {
+		elections, err = uc.chainManager.GetActiveElectionsFromBlockchain(ctx)
 	} else {
-		elections, err = uc.electionRepo.ListElections(ctx)
+		elections, err = uc.chainManager.GetAllElectionsFromBlockchain(ctx)
+	}
+	
+	// Filtrar por criador se especificado
+	if !request.CreatedBy.IsEmpty() && err == nil {
+		var filteredElections []*entities.Election
+		for _, election := range elections {
+			if election.GetCreatedBy().Equals(request.CreatedBy) {
+				filteredElections = append(filteredElections, election)
+			}
+		}
+		elections = filteredElections
 	}
 
 	if err != nil {
@@ -142,9 +155,9 @@ func (uc *ManageElectionUseCase) UpdateElectionStatus(ctx context.Context, reque
 	}
 
 	// Obter eleição atual
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	// Validar transição de status
@@ -182,9 +195,9 @@ func (uc *ManageElectionUseCase) GetElectionResults(ctx context.Context, request
 	}
 
 	// Obter eleição
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	// Obter resultados do repositório

@@ -29,6 +29,10 @@ type PoAEngine struct {
 	myNodeID         valueobjects.NodeID
 	myPrivateKey     *services.PrivateKey
 	
+	// Sistema de peers para sincronização
+	peers            []*PoAEngine
+	peersMutex       sync.RWMutex
+	
 	// Pool de transações pendentes
 	pendingTxs       []*entities.Transaction
 	maxPendingTxs    int
@@ -115,6 +119,7 @@ func (poa *PoAEngine) StartConsensus(ctx context.Context) error {
 	go poa.consensusLoop(ctx)
 	go poa.transactionProcessor(ctx)
 	go poa.roundMonitor(ctx)
+	go poa.syncLoop(ctx) // Sincronização periódica com peers
 
 	return nil
 }
@@ -162,6 +167,9 @@ func (poa *PoAEngine) ProposeBlock(ctx context.Context, block *entities.Block) e
 	if err := poa.chainManager.AddBlock(ctx, block); err != nil {
 		return fmt.Errorf("failed to add block to chain: %w", err)
 	}
+
+	// Propagar bloco para todos os peers automaticamente
+	poa.propagateBlockToPeers(ctx, block)
 
 	// Notificar produção de bloco
 	if err := poa.roundRobin.NotifyBlockProduced(ctx, poa.myNodeID); err != nil {
@@ -446,6 +454,9 @@ func (poa *PoAEngine) tryProduceBlock(ctx context.Context) {
 		return
 	}
 
+	// Propagar bloco para todos os peers automaticamente
+	poa.propagateBlockToPeers(ctx, block)
+
 	// Remover transações processadas do pool
 	poa.pendingTxs = poa.pendingTxs[txCount:]
 
@@ -573,4 +584,109 @@ func (poa *PoAEngine) serializeBlockForValidation(ctx context.Context, block *en
 	)
 	
 	return []byte(data), nil
+}
+
+// AddPeer adiciona um peer para sincronização de blockchain
+func (poa *PoAEngine) AddPeer(peer *PoAEngine) {
+	poa.peersMutex.Lock()
+	defer poa.peersMutex.Unlock()
+	
+	// Evitar adicionar o próprio nó como peer
+	if peer.myNodeID.Equals(poa.myNodeID) {
+		return
+	}
+	
+	// Verificar se o peer já existe
+	for _, existingPeer := range poa.peers {
+		if existingPeer.myNodeID.Equals(peer.myNodeID) {
+			return
+		}
+	}
+	
+	poa.peers = append(poa.peers, peer)
+}
+
+// propagateBlockToPeers propaga um bloco para todos os peers
+func (poa *PoAEngine) propagateBlockToPeers(ctx context.Context, block *entities.Block) {
+	poa.peersMutex.RLock()
+	defer poa.peersMutex.RUnlock()
+	
+	for _, peer := range poa.peers {
+		go func(p *PoAEngine) {
+			// Verificar se o peer precisa deste bloco
+			peerHeight, err := p.chainManager.GetChainHeight(ctx)
+			if err != nil {
+				return
+			}
+			
+			// Se o peer tem altura menor, adicionar o bloco
+			if peerHeight < block.GetIndex() {
+				if err := p.chainManager.AddBlock(ctx, block); err != nil {
+					// Log do erro mas não falha - pode ser bloco duplicado
+					return
+				}
+			}
+		}(peer)
+	}
+}
+
+// SyncWithPeers sincroniza a blockchain com os peers (método público)
+func (poa *PoAEngine) SyncWithPeers(ctx context.Context) error {
+	poa.peersMutex.RLock()
+	defer poa.peersMutex.RUnlock()
+	
+	myHeight, err := poa.chainManager.GetChainHeight(ctx)
+	if err != nil {
+		return err
+	}
+	
+	// Encontrar o peer com maior altura
+	var bestPeer *PoAEngine
+	var maxHeight uint64 = myHeight
+	
+	for _, peer := range poa.peers {
+		peerHeight, err := peer.chainManager.GetChainHeight(ctx)
+		if err != nil {
+			continue
+		}
+		
+		if peerHeight > maxHeight {
+			maxHeight = peerHeight
+			bestPeer = peer
+		}
+	}
+	
+	// Se encontrou um peer com blockchain maior, sincronizar
+	if bestPeer != nil && maxHeight > myHeight {
+		for blockIndex := myHeight + 1; blockIndex <= maxHeight; blockIndex++ {
+			block, err := bestPeer.chainManager.GetBlockByIndex(ctx, blockIndex)
+			if err != nil {
+				continue
+			}
+			
+			if err := poa.chainManager.AddBlock(ctx, block); err != nil {
+				return fmt.Errorf("failed to sync block %d: %w", blockIndex, err)
+			}
+		}
+	}
+	
+	return nil
+}
+
+// syncLoop executa sincronização periódica com peers
+func (poa *PoAEngine) syncLoop(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second) // Sincronizar a cada 5 segundos
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if poa.isRunning {
+				// Sincronizar com peers silenciosamente
+				_ = poa.SyncWithPeers(ctx)
+			}
+		}
+	}
 }

@@ -479,3 +479,98 @@ func (cm *ChainManager) VerifyTransactionInclusion(ctx context.Context, blockHas
 	// Verificar prova contra o Merkle Root do bloco
 	return VerifyProof(proof, block.GetMerkleRoot()), nil
 }
+
+// GetElectionFromBlockchain busca uma eleição específica na blockchain
+func (cm *ChainManager) GetElectionFromBlockchain(ctx context.Context, electionID valueobjects.Hash) (*entities.Election, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	height, err := cm.GetChainHeight(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain height: %w", err)
+	}
+
+	// Procurar nos blocos (do mais recente para o mais antigo)
+	for i := height; ; i-- {
+		block, err := cm.repository.GetBlockByIndex(ctx, i)
+		if err != nil {
+			if i == 0 {
+				break
+			}
+			continue
+		}
+
+		// Verificar transações do tipo ELECTION
+		for _, tx := range block.GetTransactions() {
+			if tx.GetType() == entities.ElectionTransaction {
+				// Deserializar eleição
+				election := &entities.Election{}
+				if err := election.FromBytes(tx.GetData()); err != nil {
+					continue
+				}
+
+				// Verificar se é a eleição procurada
+				if election.GetID().Equals(electionID) {
+					return election, nil
+				}
+			}
+		}
+
+		if i == 0 {
+			break
+		}
+	}
+
+	return nil, fmt.Errorf("election not found in blockchain")
+}
+
+// GetAllElectionsFromBlockchain retorna todas as eleições da blockchain
+func (cm *ChainManager) GetAllElectionsFromBlockchain(ctx context.Context) ([]*entities.Election, error) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	var elections []*entities.Election
+
+	height, err := cm.GetChainHeight(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get chain height: %w", err)
+	}
+
+	// Procurar em todos os blocos
+	for i := uint64(0); i <= height; i++ {
+		block, err := cm.repository.GetBlockByIndex(ctx, i)
+		if err != nil {
+			continue
+		}
+
+		// Extrair eleições
+		for _, tx := range block.GetTransactions() {
+			if tx.GetType() == entities.ElectionTransaction {
+				election := &entities.Election{}
+				if err := election.FromBytes(tx.GetData()); err != nil {
+					continue
+				}
+				elections = append(elections, election)
+			}
+		}
+	}
+
+	return elections, nil
+}
+
+// GetActiveElectionsFromBlockchain retorna eleições ativas da blockchain
+func (cm *ChainManager) GetActiveElectionsFromBlockchain(ctx context.Context) ([]*entities.Election, error) {
+	allElections, err := cm.GetAllElectionsFromBlockchain(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var activeElections []*entities.Election
+	for _, election := range allElections {
+		if election.IsActive() {
+			activeElections = append(activeElections, election)
+		}
+	}
+
+	return activeElections, nil
+}

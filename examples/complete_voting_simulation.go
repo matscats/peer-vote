@@ -90,9 +90,18 @@ func main() {
 	// === FASE 4: PROCESSO DE VOTAÇÃO ===
 	fmt.Println("\n🗳️  FASE 4: Iniciando processo de votação...")
 	
-	// Aguardar um momento para garantir que a eleição esteja ativa
-	fmt.Println("⏳ Aguardando eleição ficar ativa...")
-	time.Sleep(3 * time.Second)
+	// Forçar sincronização imediata de todos os nós
+	fmt.Println("⏳ Forçando sincronização blockchain entre nós...")
+	for _, node := range nodes {
+		if err := node.PoAEngine.SyncWithPeers(ctx); err != nil {
+			log.Printf("Aviso: Erro na sincronização do nó %s: %v", node.ID.String(), err)
+		}
+	}
+	
+	// A eleição será ativa automaticamente em todos os nós baseada no tempo
+	fmt.Println("✅ Eleição ativa automaticamente por timing")
+	
+	time.Sleep(1 * time.Second)
 	
 	conductVoting(ctx, nodes, voters, election)
 	fmt.Println("✅ Processo de votação concluído")
@@ -186,6 +195,8 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 			node.ElectionRepo,
 			node.CryptoService,
 			votingValidator,
+			node.ChainManager,
+			node.PoAEngine,
 		)
 		
 		node.SubmitVoteUC = usecases.NewSubmitVoteUseCase(
@@ -206,6 +217,7 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		node.ManageElectionUC = usecases.NewManageElectionUseCase(
 			node.ElectionRepo,
 			votingValidator,
+			node.ChainManager,
 		)
 		
 		nodes[i] = node
@@ -235,17 +247,41 @@ func startConsensus(ctx context.Context, nodes []*Node) {
 	}
 	genesisTx.SetSignature(signature)
 	
-	// Criar bloco gênesis em todos os nós
-	for i, node := range nodes {
-		if err := node.ChainManager.CreateGenesisBlock(ctx, []*entities.Transaction{genesisTx}, node.ID, node.KeyPair.PrivateKey); err != nil {
-			log.Fatalf("Erro ao criar bloco gênesis no nó %d: %v", i+1, err)
+	// Criar bloco gênesis apenas no nó 1
+	if err := nodes[0].ChainManager.CreateGenesisBlock(ctx, []*entities.Transaction{genesisTx}, nodes[0].ID, nodes[0].KeyPair.PrivateKey); err != nil {
+		log.Fatalf("Erro ao criar bloco gênesis: %v", err)
+	}
+	
+	// Obter o bloco gênesis criado
+	genesisBlock, err := nodes[0].ChainManager.GetBlockByIndex(ctx, 0)
+	if err != nil {
+		log.Fatalf("Erro ao obter bloco gênesis: %v", err)
+	}
+	
+	// Propagar o mesmo bloco gênesis para todos os outros nós
+	for i := 1; i < len(nodes); i++ {
+		if err := nodes[i].ChainManager.AddBlock(ctx, genesisBlock); err != nil {
+			log.Fatalf("Erro ao adicionar bloco gênesis no nó %d: %v", i+1, err)
 		}
-		
-		// Iniciar consenso PoA
+	}
+	
+	// Iniciar consenso em todos os nós
+	for i, node := range nodes {
 		if err := node.PoAEngine.StartConsensus(ctx); err != nil {
 			log.Printf("Aviso: Erro ao iniciar consenso no nó %d: %v", i+1, err)
 		}
 	}
+	
+	// Conectar todos os nós como peers uns dos outros (rede completa)
+	fmt.Println("🔗 Conectando nós como peers...")
+	for i := 0; i < len(nodes); i++ {
+		for j := 0; j < len(nodes); j++ {
+			if i != j {
+				nodes[i].PoAEngine.AddPeer(nodes[j].PoAEngine)
+			}
+		}
+	}
+	fmt.Printf("✅ Rede P2P configurada: %d nós conectados\n", len(nodes))
 }
 
 // createElectionOnBlockchain cria uma eleição real na blockchain
@@ -261,12 +297,13 @@ func createElectionOnBlockchain(ctx context.Context, node *Node) *entities.Elect
 	electionReq := &usecases.CreateElectionRequest{
 		Title:            "Eleição para Prefeito de TechCity 2025",
 		Description:      "Eleição municipal para escolha do prefeito da cidade tecnológica",
-		StartTime:        time.Now().Add(2 * time.Second),
+		StartTime:        time.Now().Add(-5 * time.Second), // Já ativa há 5 segundos
 		EndTime:          time.Now().Add(10 * time.Minute),
 		Candidates:       candidates,
 		CreatedBy:        node.ID,
 		AllowAnonymous:   true,
 		MaxVotesPerVoter: 1,
+		PrivateKey:       node.KeyPair.PrivateKey,
 	}
 	
 	response, err := node.CreateElectionUC.Execute(ctx, electionReq)
@@ -274,23 +311,14 @@ func createElectionOnBlockchain(ctx context.Context, node *Node) *entities.Elect
 		log.Fatalf("Erro ao criar eleição: %v", err)
 	}
 	
-	// Ativar a eleição para permitir votação
-	response.Election.SetStatus(entities.ElectionActive)
 	
 	return response.Election
 }
 
-// propagateElection propaga a eleição para todos os nós da rede
+// propagateElection - Eleições são automaticamente sincronizadas via consenso blockchain
 func propagateElection(ctx context.Context, nodes []*Node, election *entities.Election) {
-	for i := 1; i < len(nodes); i++ {
-		// Ativar a eleição antes de propagar
-		election.SetStatus(entities.ElectionActive)
-		
-		// Simular propagação armazenando a eleição em cada nó
-		if err := nodes[i].ElectionRepo.CreateElection(ctx, election); err != nil {
-			log.Printf("Aviso: Erro ao propagar eleição para nó %d: %v", i+1, err)
-		}
-	}
+	// A sincronização é feita automaticamente pelo PoA Engine quando blocos são criados
+	fmt.Println("🔄 Sincronização automática via consenso PoA")
 }
 
 // generateVoters gera eleitores para a simulação
@@ -346,7 +374,7 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 			candidateID = "candidate_003"
 		}
 		
-		// Escolher nó aleatório para processar o voto (simula distribuição)
+		// Selecionar nó aleatório para processar o voto (distribuição real)
 		nodeIndex := rand.Intn(len(nodes))
 		selectedNode := nodes[nodeIndex]
 		

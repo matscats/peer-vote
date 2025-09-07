@@ -101,9 +101,9 @@ func (uc *AuditVotesUseCase) AuditVotes(ctx context.Context, request *AuditVotes
 	}
 
 	// Obter eleição
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	// === NOVA LÓGICA BLOCKCHAIN ===
@@ -162,17 +162,16 @@ func (uc *AuditVotesUseCase) CountVotes(ctx context.Context, request *CountVotes
 	}
 
 	// Obter eleição
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
-	// Verificar se a eleição pode ter votos contados
-	if election.GetStatus() != entities.ElectionClosed && election.GetStatus() != entities.ElectionActive {
+	// Verificar se a eleição pode ter votos contados (ativa ou encerrada)
+	if !election.IsActive() && election.GetStatus() != entities.ElectionClosed {
 		return nil, fmt.Errorf("election must be active or closed to count votes")
 	}
 
-	// === NOVA LÓGICA BLOCKCHAIN ===
 	// Obter votos diretamente da blockchain
 	votes, err := uc.extractVotesFromBlockchain(ctx, request.ElectionID)
 	if err != nil {

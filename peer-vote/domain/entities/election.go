@@ -181,9 +181,12 @@ func (e *Election) IncrementVoteCount(candidateID string) bool {
 // IsActive verifica se a eleição está ativa
 func (e *Election) IsActive() bool {
 	now := valueobjects.Now()
-	return e.status == ElectionActive &&
-		now.After(e.startTime) &&
-		now.Before(e.endTime)
+	
+	// Uma eleição é ativa se está no período correto E não foi cancelada
+	isInTimePeriod := now.After(e.startTime) && now.Before(e.endTime)
+	isNotCancelled := e.status != ElectionCancelled
+	
+	return isInTimePeriod && isNotCancelled
 }
 
 // CanVote verifica se é possível votar nesta eleição

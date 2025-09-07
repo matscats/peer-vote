@@ -57,7 +57,7 @@ func runStatusCommand(cmd *cobra.Command, args []string) {
 	electionRepo := persistence.NewMemoryElectionRepository()
 	validationService := services.NewVotingValidator(electionRepo, nil, cryptoService)
 
-	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService)
+	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService, nil)
 
 	// Mostrar status das eleições (padrão ou se solicitado)
 	if !showNetwork || showElections || showAll {

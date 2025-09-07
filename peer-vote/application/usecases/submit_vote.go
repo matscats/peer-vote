@@ -66,10 +66,10 @@ func (uc *SubmitVoteUseCase) Execute(ctx context.Context, request *SubmitVoteReq
 		return nil, fmt.Errorf("invalid request: %w", err)
 	}
 
-	// Obter eleição
-	election, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	// Obter eleição da blockchain
+	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	// Criar voto
@@ -116,11 +116,6 @@ func (uc *SubmitVoteUseCase) Execute(ctx context.Context, request *SubmitVoteReq
 	if err != nil {
 		// Log do erro mas não falha - transação está no pool
 		fmt.Printf("Warning: transaction confirmation timeout: %v\n", err)
-	}
-
-	// Incrementar contador de votos do candidato (mantido para compatibilidade)
-	if err := uc.electionRepo.IncrementCandidateVotes(ctx, request.ElectionID, request.CandidateID); err != nil {
-		return nil, fmt.Errorf("failed to increment candidate votes: %w", err)
 	}
 
 	return &SubmitVoteResponse{

@@ -91,8 +91,8 @@ func runStartCommand(cmd *cobra.Command, args []string) {
 	validationService := services.NewVotingValidator(electionRepo, nil, cryptoService)
 	
 	// Casos de uso
-	createElectionUseCase := usecases.NewCreateElectionUseCase(electionRepo, cryptoService, validationService)
-	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService)
+	createElectionUseCase := usecases.NewCreateElectionUseCase(electionRepo, cryptoService, validationService, chainManager, poaEngine)
+	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService, chainManager)
 	submitVoteUseCase := usecases.NewSubmitVoteUseCase(electionRepo, chainManager, poaEngine, cryptoService, validationService)
 	auditVotesUseCase := usecases.NewAuditVotesUseCase(electionRepo, chainManager, cryptoService, validationService)
 

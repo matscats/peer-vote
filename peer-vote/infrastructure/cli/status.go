@@ -55,10 +55,9 @@ func runStatusCommand(cmd *cobra.Command, args []string) {
 	// Inicializar serviços
 	cryptoService := crypto.NewECDSAService()
 	electionRepo := persistence.NewMemoryElectionRepository()
-	voteRepo := persistence.NewMemoryVoteRepository()
-	validationService := services.NewVotingValidator(electionRepo, voteRepo, cryptoService)
-	
-	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, voteRepo, validationService)
+	validationService := services.NewVotingValidator(electionRepo, nil, cryptoService)
+
+	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService)
 
 	// Mostrar status das eleições (padrão ou se solicitado)
 	if !showNetwork || showElections || showAll {
@@ -77,7 +76,7 @@ func runStatusCommand(cmd *cobra.Command, args []string) {
 
 	// Mostrar estatísticas gerais
 	if !showElections && !showNetwork || showAll {
-		showGeneralStats(ctx, electionRepo, voteRepo)
+		showGeneralStats(ctx, electionRepo)
 	}
 }
 
@@ -151,7 +150,7 @@ func showBlockchainStatus() {
 	fmt.Println("✅ Cadeia válida: N/A")
 }
 
-func showGeneralStats(ctx context.Context, electionRepo *persistence.MemoryElectionRepository, voteRepo *persistence.MemoryVoteRepository) {
+func showGeneralStats(ctx context.Context, electionRepo *persistence.MemoryElectionRepository) {
 	fmt.Println("\n📈 Estatísticas Gerais")
 	fmt.Println("---------------------")
 
@@ -163,22 +162,8 @@ func showGeneralStats(ctx context.Context, electionRepo *persistence.MemoryElect
 		fmt.Printf("🗳️  Total de eleições: %d\n", len(elections))
 	}
 
-	// Contar votos
-	votes, err := voteRepo.ListVotes(ctx)
-	if err != nil {
-		log.Printf("Erro ao contar votos: %v", err)
-	} else {
-		fmt.Printf("📝 Total de votos: %d\n", len(votes))
-		
-		// Contar votos anônimos
-		anonymousCount := 0
-		for _, vote := range votes {
-			if vote.IsAnonymous() {
-				anonymousCount++
-			}
-		}
-		fmt.Printf("🔒 Votos anônimos: %d\n", anonymousCount)
-	}
+	fmt.Printf("📊 Total de votos: N/A (consulte a blockchain)\n")
+	fmt.Printf("🎭 Votos anônimos: N/A (consulte a blockchain)\n")
 
 	// Status dos serviços
 	fmt.Println("\n🔧 Serviços")

@@ -67,19 +67,16 @@ type GetElectionResultsResponse struct {
 // ManageElectionUseCase implementa os casos de uso de gerenciamento de eleições
 type ManageElectionUseCase struct {
 	electionRepo      repositories.ElectionRepository
-	voteRepo          repositories.VoteRepository
 	validationService services.VotingValidationService
 }
 
 // NewManageElectionUseCase cria um novo caso de uso de gerenciamento de eleições
 func NewManageElectionUseCase(
 	electionRepo repositories.ElectionRepository,
-	voteRepo repositories.VoteRepository,
 	validationService services.VotingValidationService,
 ) *ManageElectionUseCase {
 	return &ManageElectionUseCase{
 		electionRepo:      electionRepo,
-		voteRepo:          voteRepo,
 		validationService: validationService,
 	}
 }
@@ -196,10 +193,9 @@ func (uc *ManageElectionUseCase) GetElectionResults(ctx context.Context, request
 		return nil, fmt.Errorf("failed to get election results: %w", err)
 	}
 
-	// Contar total de votos
-	totalVotes, err := uc.voteRepo.CountVotesByElection(ctx, request.ElectionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to count votes: %w", err)
+	totalVotes := uint64(0)
+	for _, count := range results {
+		totalVotes += count
 	}
 
 	// Atualizar contadores dos candidatos com dados dos votos

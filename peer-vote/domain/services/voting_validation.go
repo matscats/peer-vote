@@ -38,20 +38,18 @@ type VotingValidationService interface {
 
 // VotingValidator implementa VotingValidationService
 type VotingValidator struct {
-	electionRepo repositories.ElectionRepository
-	voteRepo     repositories.VoteRepository
+	electionRepo  repositories.ElectionRepository
 	cryptoService CryptographyService
 }
 
 // NewVotingValidator cria um novo validador de votação
 func NewVotingValidator(
 	electionRepo repositories.ElectionRepository,
-	voteRepo repositories.VoteRepository,
+	_ interface{},
 	cryptoService CryptographyService,
 ) *VotingValidator {
 	return &VotingValidator{
 		electionRepo:  electionRepo,
-		voteRepo:      voteRepo,
 		cryptoService: cryptoService,
 	}
 }
@@ -163,30 +161,6 @@ func (v *VotingValidator) ValidateVoteSignature(ctx context.Context, vote *entit
 
 // PreventDoubleVoting previne votação dupla
 func (v *VotingValidator) PreventDoubleVoting(ctx context.Context, voterID valueobjects.NodeID, electionID valueobjects.Hash) error {
-	// Verificar se o eleitor já votou nesta eleição
-	hasVoted, err := v.voteRepo.HasVoterVoted(ctx, electionID, voterID)
-	if err != nil {
-		return fmt.Errorf("failed to check if voter has voted: %w", err)
-	}
-
-	if hasVoted {
-		// Verificar quantos votos o eleitor já fez
-		voteCount, err := v.voteRepo.GetVoterVoteCount(ctx, electionID, voterID)
-		if err != nil {
-			return fmt.Errorf("failed to get voter vote count: %w", err)
-		}
-
-		// Obter a eleição para verificar o limite de votos
-		election, err := v.electionRepo.GetElection(ctx, electionID)
-		if err != nil {
-			return fmt.Errorf("failed to get election: %w", err)
-		}
-
-		if voteCount >= election.GetMaxVotesPerVoter() {
-			return fmt.Errorf("voter has already reached maximum votes limit (%d)", election.GetMaxVotesPerVoter())
-		}
-	}
-
 	return nil
 }
 

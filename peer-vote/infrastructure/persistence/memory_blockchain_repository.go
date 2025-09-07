@@ -9,6 +9,7 @@ import (
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
 	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
+	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 )
 
@@ -26,16 +27,20 @@ type MemoryBlockchainRepository struct {
 	// Altura da cadeia
 	chainHeight uint64
 	
+	// Serviço de criptografia para cálculo de hash
+	cryptoService services.CryptographyService
+	
 	// Mutex para operações thread-safe
 	mu sync.RWMutex
 }
 
 // NewMemoryBlockchainRepository cria um novo repositório em memória
-func NewMemoryBlockchainRepository() repositories.BlockchainRepository {
+func NewMemoryBlockchainRepository(cryptoService services.CryptographyService) repositories.BlockchainRepository {
 	return &MemoryBlockchainRepository{
 		blocksByHash:  make(map[string]*entities.Block),
 		blocksByIndex: make(map[uint64]*entities.Block),
 		chainHeight:   0,
+		cryptoService: cryptoService,
 	}
 }
 
@@ -285,20 +290,47 @@ func (r *MemoryBlockchainRepository) GetBlocksBefore(ctx context.Context, index 
 	return blocks, nil
 }
 
-// calculateBlockHash calcula o hash de um bloco
+// calculateBlockHash calcula o hash de um bloco usando SHA-256
 func (r *MemoryBlockchainRepository) calculateBlockHash(block *entities.Block) valueobjects.Hash {
-	// Implementação simplificada - em produção usaria o serviço de criptografia
-	// Por enquanto, usar uma combinação de índice e timestamp
-	data := fmt.Sprintf("%d-%d-%s", 
-		block.GetIndex(), 
-		block.GetTimestamp().Unix(), 
-		block.GetMerkleRoot().String())
+	// Serializar o bloco para cálculo de hash
+	blockData, err := r.serializeBlockForHashing(block)
+	if err != nil {
+		// Em caso de erro, retornar hash vazio
+		return valueobjects.EmptyHash()
+	}
 	
-	// Simular hash SHA-256
-	hash := make([]byte, 32)
-	copy(hash, []byte(data))
+	// Usar o serviço de criptografia para calcular hash SHA-256
+	ctx := context.Background()
+	return r.cryptoService.HashBlock(ctx, blockData)
+}
+
+// serializeBlockForHashing serializa um bloco para cálculo de hash
+func (r *MemoryBlockchainRepository) serializeBlockForHashing(block *entities.Block) ([]byte, error) {
+	// Criar estrutura determinística para hash
+	hashData := struct {
+		Index        uint64
+		PreviousHash string
+		MerkleRoot   string
+		Timestamp    int64
+		Validator    string
+	}{
+		Index:        block.GetIndex(),
+		PreviousHash: block.GetPreviousHash().String(),
+		MerkleRoot:   block.GetMerkleRoot().String(),
+		Timestamp:    block.GetTimestamp().Unix(),
+		Validator:    block.GetValidator().String(),
+	}
 	
-	return valueobjects.NewHash(hash)
+	// Serializar como string determinística
+	data := fmt.Sprintf("%d|%s|%s|%d|%s",
+		hashData.Index,
+		hashData.PreviousHash,
+		hashData.MerkleRoot,
+		hashData.Timestamp,
+		hashData.Validator,
+	)
+	
+	return []byte(data), nil
 }
 
 // recalculateChainHeight recalcula a altura da cadeia

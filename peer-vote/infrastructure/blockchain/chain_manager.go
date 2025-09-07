@@ -320,18 +320,106 @@ func (cm *ChainManager) serializeBlockForHashing(ctx context.Context, block *ent
 
 // shouldReorganize determina se a cadeia deve ser reorganizada
 func (cm *ChainManager) shouldReorganize(ctx context.Context, alternativeBlock *entities.Block) (bool, error) {
-	// Por simplicidade, não reorganizar por enquanto
-	// Em uma implementação completa, isso verificaria:
-	// - Comprimento da cadeia alternativa
-	// - Dificuldade acumulada
-	// - Regras de consenso específicas
+	if alternativeBlock == nil {
+		return false, errors.New("alternative block is nil")
+	}
+	
+	// Verificar se o bloco alternativo é válido
+	if err := cm.blockBuilder.ValidateBlock(ctx, alternativeBlock); err != nil {
+		return false, fmt.Errorf("alternative block is invalid: %w", err)
+	}
+	
+	// Verificar se temos um bloco atual para comparar
+	if cm.latestBlock == nil {
+		return true, nil // Se não temos bloco, aceitar qualquer bloco válido
+	}
+	
+	// Verificar se o bloco alternativo tem o mesmo índice
+	if alternativeBlock.GetIndex() != cm.latestBlock.GetIndex() {
+		return false, nil // Índices diferentes, não reorganizar
+	}
+	
+	// Verificar se o bloco alternativo tem o mesmo hash anterior
+	if !alternativeBlock.GetPreviousHash().Equals(cm.latestBlock.GetPreviousHash()) {
+		return false, nil // Hash anterior diferente, não reorganizar
+	}
+	
+	// Critério de reorganização: bloco mais antigo (produzido primeiro)
+	// Em PoA, o primeiro bloco válido produzido deve ser aceito
+	if alternativeBlock.GetTimestamp().Before(cm.latestBlock.GetTimestamp()) {
+		return true, nil
+	}
+	
+	// Se os timestamps são iguais, usar o hash como critério de desempate
+	if alternativeBlock.GetTimestamp().Equal(cm.latestBlock.GetTimestamp()) {
+		altHash := cm.calculateBlockHash(ctx, alternativeBlock)
+		currentHash := cm.calculateBlockHash(ctx, cm.latestBlock)
+		
+		// Usar comparação lexicográfica dos hashes
+		return altHash.String() < currentHash.String(), nil
+	}
+	
 	return false, nil
 }
 
 // reorganizeChain reorganiza a cadeia para uma alternativa
 func (cm *ChainManager) reorganizeChain(ctx context.Context, alternativeBlock *entities.Block) error {
-	// Implementação simplificada - não suportada por enquanto
-	return errors.New("chain reorganization not implemented yet")
+	if alternativeBlock == nil {
+		return errors.New("alternative block is nil")
+	}
+	
+	// Implementação básica de reorganização
+	// Esta é uma versão simplificada que apenas substitui o último bloco
+	
+	// Verificar se o bloco alternativo é válido
+	if err := cm.blockBuilder.ValidateBlock(ctx, alternativeBlock); err != nil {
+		return fmt.Errorf("alternative block is invalid: %w", err)
+	}
+	
+	// Verificar se o bloco alternativo tem o mesmo índice que o atual
+	currentHeight := cm.chainHeight
+	if alternativeBlock.GetIndex() != currentHeight {
+		return fmt.Errorf("alternative block index %d does not match current height %d", 
+			alternativeBlock.GetIndex(), currentHeight)
+	}
+	
+	// Obter o bloco atual
+	currentBlock, err := cm.repository.GetBlockByIndex(ctx, currentHeight)
+	if err != nil {
+		return fmt.Errorf("failed to get current block: %w", err)
+	}
+	
+	// Verificar se o bloco alternativo tem o mesmo hash anterior
+	if !alternativeBlock.GetPreviousHash().Equals(currentBlock.GetPreviousHash()) {
+		return fmt.Errorf("alternative block has different previous hash")
+	}
+	
+	// Comparar "peso" dos blocos (por simplicidade, usar timestamp)
+	// Em uma implementação real, seria baseado em dificuldade acumulada
+	if alternativeBlock.GetTimestamp().Before(currentBlock.GetTimestamp()) {
+		// Bloco alternativo é "melhor" (mais antigo = produzido primeiro)
+		
+		// Remover o bloco atual
+		currentBlockHash := cm.calculateBlockHash(ctx, currentBlock)
+		if err := cm.repository.DeleteBlock(ctx, currentBlockHash); err != nil {
+			return fmt.Errorf("failed to remove current block: %w", err)
+		}
+		
+		// Adicionar o bloco alternativo
+		if err := cm.repository.SaveBlock(ctx, alternativeBlock); err != nil {
+			// Tentar restaurar o bloco original em caso de erro
+			cm.repository.SaveBlock(ctx, currentBlock)
+			return fmt.Errorf("failed to save alternative block: %w", err)
+		}
+		
+		// Atualizar cache
+		cm.latestBlock = alternativeBlock
+		
+		return nil
+	}
+	
+	// Bloco atual é melhor, não reorganizar
+	return fmt.Errorf("current block is better than alternative, no reorganization needed")
 }
 
 // GetBlockRange retorna uma faixa de blocos

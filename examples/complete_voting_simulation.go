@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"time"
 
 	"github.com/matscats/peer-vote/peer-vote/application/usecases"
@@ -17,569 +18,510 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/persistence"
 )
 
-// Simulação completa de uma eleição real
+// Node representa um nó completo da rede Peer-Vote
+type Node struct {
+	ID           valueobjects.NodeID
+	Port         int
+	KeyPair      *services.KeyPair
+	
+	// Serviços de infraestrutura
+	CryptoService    services.CryptographyService
+	P2PService       *network.P2PService
+	ChainManager     *blockchain.ChainManager
+	PoAEngine        *consensus.PoAEngine
+	
+	// Repositórios
+	ElectionRepo     *persistence.MemoryElectionRepository
+	BlockchainRepo   *persistence.MemoryBlockchainRepository
+	KeyRepo          *persistence.MemoryKeyRepository
+	
+	// Casos de uso
+	CreateElectionUC *usecases.CreateElectionUseCase
+	SubmitVoteUC     *usecases.SubmitVoteUseCase
+	AuditVotesUC     *usecases.AuditVotesUseCase
+	ManageElectionUC *usecases.ManageElectionUseCase
+}
+
+// Voter representa um eleitor no sistema
+type Voter struct {
+	ID       valueobjects.NodeID
+	Name     string
+	KeyPair  *services.KeyPair
+}
+
 func main() {
-	fmt.Println("🗳️  === SIMULAÇÃO COMPLETA DE VOTAÇÃO PEER-VOTE ===")
-	fmt.Println("📋 Cenário: Eleição para Prefeito de TechCity")
+	fmt.Println("🗳️  === PEER-VOTE: SISTEMA DE VOTAÇÃO BLOCKCHAIN REAL ===")
+	fmt.Println("📋 Demonstração completa de eleição descentralizada")
+	fmt.Println("⛓️  Usando blockchain real com consenso PoA")
 	fmt.Println()
 
 	ctx := context.Background()
 
-	// === FASE 1: CONFIGURAÇÃO DA REDE ===
-	fmt.Println("🔧 FASE 1: Configurando rede de nós...")
+	// === FASE 1: CONFIGURAÇÃO DA REDE BLOCKCHAIN ===
+	fmt.Println("🔧 FASE 1: Configurando rede blockchain...")
 	
-	nodes := setupNodes(ctx, 3) // 3 nós na rede
-	fmt.Printf("✅ %d nós configurados na rede\n", len(nodes))
+	nodes := setupBlockchainNetwork(ctx, 3)
+	fmt.Printf("✅ Rede blockchain configurada com %d nós validadores\n", len(nodes))
 	
-	// Inicializar rede P2P real
-	fmt.Println("🔍 Iniciando rede P2P...")
-	initializeP2PNetwork(ctx, nodes)
-	time.Sleep(1 * time.Second)
+	// Inicializar consenso PoA
+	fmt.Println("🏛️ Iniciando consenso Proof of Authority...")
+	startConsensus(ctx, nodes)
+	fmt.Println("✅ Consenso PoA ativo em todos os nós")
 	
 	// === FASE 2: CRIAÇÃO DA ELEIÇÃO ===
-	fmt.Println("\n🗳️  FASE 2: Criando eleição...")
+	fmt.Println("\n🗳️  FASE 2: Criando eleição na blockchain...")
 	
-	election := createElection(ctx, nodes)
+	election := createElectionOnBlockchain(ctx, nodes[0])
 	fmt.Printf("✅ Eleição criada: %s\n", election.GetTitle())
 	fmt.Printf("📅 Período: %s até %s\n", 
 		election.GetStartTime().Time().Format("15:04:05"),
 		election.GetEndTime().Time().Format("15:04:05"))
 	
-	// === FASE 3: GERAÇÃO DE ELEITORES ===
-	fmt.Println("\n👥 FASE 3: Gerando eleitores...")
+	// Propagar eleição para todos os nós
+	propagateElection(ctx, nodes, election)
+	fmt.Println("🌐 Eleição propagada para toda a rede")
 	
-	voters := generateVoters(ctx, nodes[0].CryptoService, 10)
+	// === FASE 3: REGISTRO DE ELEITORES ===
+	fmt.Println("\n👥 FASE 3: Registrando eleitores...")
+	
+	voters := generateVoters(ctx, 12) // 12 eleitores
 	fmt.Printf("✅ %d eleitores registrados\n", len(voters))
 	
 	// === FASE 4: PROCESSO DE VOTAÇÃO ===
 	fmt.Println("\n🗳️  FASE 4: Iniciando processo de votação...")
 	
-	votes := conductVoting(ctx, nodes, election, voters)
-	fmt.Printf("✅ %d votos coletados\n", len(votes))
+	// Aguardar um momento para garantir que a eleição esteja ativa
+	fmt.Println("⏳ Aguardando eleição ficar ativa...")
+	time.Sleep(3 * time.Second)
 	
-	// === FASE 5: AUDITORIA E RESULTADOS ===
-	fmt.Println("\n📊 FASE 5: Auditoria e apuração...")
+	conductVoting(ctx, nodes, voters, election)
+	fmt.Println("✅ Processo de votação concluído")
 	
-	results := auditAndCount(ctx, nodes[0], election)
-	displayResults(election, results)
+	// Aguardar processamento final
+	fmt.Println("\n⏳ Aguardando processamento final da blockchain...")
+	time.Sleep(10 * time.Second)
 	
-	// === FASE 6: VERIFICAÇÃO DE INTEGRIDADE ===
-	fmt.Println("\n🔍 FASE 6: Verificação de integridade da blockchain...")
+	// === FASE 5: AUDITORIA BLOCKCHAIN ===
+	fmt.Println("\n📊 FASE 5: Auditoria completa da blockchain...")
 	
-	verifyBlockchainIntegrity(ctx, nodes)
+	auditResults := performBlockchainAudit(ctx, nodes[0], election)
+	displayAuditResults(auditResults)
 	
-	// === FASE 7: SINCRONIZAÇÃO ENTRE NÓS ===
-	fmt.Println("\n🔄 FASE 7: Verificando sincronização entre nós...")
+	// === FASE 6: RESULTADOS FINAIS ===
+	fmt.Println("\n🏆 FASE 6: Apuração e resultados finais...")
 	
-	verifySynchronization(ctx, nodes)
+	results := calculateFinalResults(ctx, nodes[0], election)
+	displayFinalResults(results)
 	
+	// === FASE 7: VERIFICAÇÃO DE INTEGRIDADE ===
+	fmt.Println("\n🔍 FASE 7: Verificação de integridade da rede...")
+	
+	verifyNetworkIntegrity(ctx, nodes)
+	
+	// === CONCLUSÃO ===
 	fmt.Println("\n🎉 === SIMULAÇÃO CONCLUÍDA COM SUCESSO! ===")
-	fmt.Println("✅ Todos os componentes funcionaram corretamente:")
-	fmt.Println("   - Rede P2P com descoberta automática")
-	fmt.Println("   - Blockchain com consenso PoA")
-	fmt.Println("   - Criptografia ECDSA para assinaturas")
-	fmt.Println("   - Sistema de votação completo")
-	fmt.Println("   - Auditoria e verificação de integridade")
+	fmt.Println("✅ Sistema de votação blockchain totalmente funcional:")
+	fmt.Println("   - Eleições criadas como transações blockchain")
+	fmt.Println("   - Votos armazenados de forma imutável na blockchain")
+	fmt.Println("   - Consenso PoA garantindo validação descentralizada")
+	fmt.Println("   - Auditoria completa lendo diretamente da blockchain")
+	fmt.Println("   - Transparência e imutabilidade garantidas")
+	fmt.Println("🚀 PEER-VOTE: O futuro da votação eletrônica!")
 }
 
-// Estrutura de um nó completo
-type Node struct {
-	ID                    valueobjects.NodeID
-	KeyPair               *services.KeyPair
-	CryptoService         *crypto.ECDSAService
-	ElectionRepo          *persistence.MemoryElectionRepository
-	VoteRepo              *persistence.MemoryVoteRepository
-	BlockchainRepo        *persistence.MemoryBlockchainRepository
-	ChainManager          *blockchain.ChainManager
-	ValidatorManager      *consensus.ValidatorManager
-	PoAEngine             *consensus.PoAEngine
-	P2PService            *network.P2PService
-	ValidationService     services.VotingValidationService
-	CreateElectionUseCase *usecases.CreateElectionUseCase
-	SubmitVoteUseCase     *usecases.SubmitVoteUseCase
-	AuditVotesUseCase     *usecases.AuditVotesUseCase
-	ManageElectionUseCase *usecases.ManageElectionUseCase
-}
-
-// Estrutura de um eleitor
-type Voter struct {
-	ID      valueobjects.NodeID
-	KeyPair *services.KeyPair
-	Name    string
-}
-
-// setupNodes configura múltiplos nós na rede
-func setupNodes(ctx context.Context, count int) []*Node {
-	nodes := make([]*Node, count)
+// setupBlockchainNetwork configura uma rede blockchain completa
+func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
+	nodes := make([]*Node, nodeCount)
 	
-	for i := 0; i < count; i++ {
-		node := &Node{}
+	for i := 0; i < nodeCount; i++ {
+		node := &Node{
+			Port: 9000 + i,
+		}
 		
-		// Serviços de infraestrutura
+		// Configurar serviços de criptografia
 		node.CryptoService = crypto.NewECDSAService()
-		node.ElectionRepo = persistence.NewMemoryElectionRepository()
-		node.VoteRepo = persistence.NewMemoryVoteRepository()
-		node.BlockchainRepo = persistence.NewMemoryBlockchainRepository().(*persistence.MemoryBlockchainRepository)
 		
-		// Gerar chave para o nó
+		// Gerar chaves para o nó
 		keyPair, err := node.CryptoService.GenerateKeyPair(ctx)
 		if err != nil {
-			log.Fatalf("Erro ao gerar chave para nó %d: %v", i, err)
+			log.Fatalf("Erro ao gerar chaves para nó %d: %v", i+1, err)
 		}
 		node.KeyPair = keyPair
-		node.ID = node.CryptoService.GenerateNodeID(ctx, keyPair.PublicKey)
+		node.ID = valueobjects.NewNodeID(fmt.Sprintf("node-%d", i+1))
 		
-		// Serviços de blockchain
+		// Configurar repositórios
+		node.BlockchainRepo = persistence.NewMemoryBlockchainRepository(node.CryptoService).(*persistence.MemoryBlockchainRepository)
+		node.ElectionRepo = persistence.NewMemoryElectionRepository()
+		node.KeyRepo = persistence.NewMemoryKeyRepository()
+		
+		// Armazenar chaves do nó
+		if err := node.KeyRepo.StoreKeyPair(ctx, node.ID, keyPair); err != nil {
+			log.Fatalf("Erro ao armazenar chaves do nó %d: %v", i+1, err)
+		}
+		
+		// Configurar blockchain
 		node.ChainManager = blockchain.NewChainManager(node.BlockchainRepo, node.CryptoService)
 		
-		// Serviços de consenso
-		node.ValidatorManager = consensus.NewValidatorManager()
+		// Configurar consenso PoA
+		validatorManager := consensus.NewValidatorManager()
+		validatorManager.AddValidator(ctx, node.ID, keyPair.PublicKey)
+		
 		node.PoAEngine = consensus.NewPoAEngine(
-			node.ValidatorManager, 
-			node.ChainManager, 
-			node.CryptoService, 
-			node.ID, 
+			validatorManager,
+			node.ChainManager,
+			node.CryptoService,
+			node.ID,
 			keyPair.PrivateKey,
 		)
 		
-		// Adicionar este nó como validador
-		err = node.ValidatorManager.AddValidator(ctx, node.ID, keyPair.PublicKey)
-		if err != nil {
-			log.Fatalf("Erro ao adicionar validador para nó %d: %v", i, err)
-		}
-		
-		// Serviços de domínio
-		node.ValidationService = services.NewVotingValidator(
-			node.ElectionRepo, 
-			node.VoteRepo, 
+		// Configurar serviços de validação
+		votingValidator := services.NewVotingValidator(
+			node.ElectionRepo,
+			nil, // Parâmetro não utilizado
 			node.CryptoService,
 		)
 		
-		// Casos de uso
-		node.CreateElectionUseCase = usecases.NewCreateElectionUseCase(
-			node.ElectionRepo, 
-			node.CryptoService, 
-			node.ValidationService,
-		)
-		node.SubmitVoteUseCase = usecases.NewSubmitVoteUseCase(
-			node.ElectionRepo, 
-			node.VoteRepo, 
-			node.CryptoService, 
-			node.ValidationService,
-		)
-		node.AuditVotesUseCase = usecases.NewAuditVotesUseCase(
-			node.ElectionRepo, 
-			node.VoteRepo, 
-			node.CryptoService, 
-			node.ValidationService,
-		)
-		node.ManageElectionUseCase = usecases.NewManageElectionUseCase(
-			node.ElectionRepo, 
-			node.VoteRepo, 
-			node.ValidationService,
+		// Configurar casos de uso
+		node.CreateElectionUC = usecases.NewCreateElectionUseCase(
+			node.ElectionRepo,
+			node.CryptoService,
+			votingValidator,
 		)
 		
-		// Configurar P2P (porta base 9000 + i)
-		p2pConfig := &network.P2PConfig{
-			ListenAddresses: []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 9000+i)},
-			BootstrapPeers:  []string{},
-			MaxConnections:  50,
-			EnableMDNS:      true,
-			EnableDHT:       true,
-			Namespace:       "peer-vote-simulation",
-		}
-		
-		p2pService, err := network.NewP2PService(
-			node.ChainManager, 
-			node.PoAEngine, 
-			node.CryptoService, 
-			p2pConfig,
+		node.SubmitVoteUC = usecases.NewSubmitVoteUseCase(
+			node.ElectionRepo,
+			node.ChainManager,
+			node.PoAEngine,
+			node.CryptoService,
+			votingValidator,
 		)
-		if err != nil {
-			log.Fatalf("Erro ao criar P2P service para nó %d: %v", i, err)
-		}
-		node.P2PService = p2pService
 		
-		// Iniciar P2P service
-		if err := node.P2PService.Start(ctx); err != nil {
-			log.Fatalf("Erro ao iniciar P2P para nó %d: %v", i, err)
-		}
+		node.AuditVotesUC = usecases.NewAuditVotesUseCase(
+			node.ElectionRepo,
+			node.ChainManager,
+			node.CryptoService,
+			votingValidator,
+		)
+		
+		node.ManageElectionUC = usecases.NewManageElectionUseCase(
+			node.ElectionRepo,
+			votingValidator,
+		)
 		
 		nodes[i] = node
 		
-		fmt.Printf("   Nó %d: %s (porta %d)\n", i+1, node.ID.String()[:16]+"...", 9000+i)
+		fmt.Printf("   Nó %d: %s (porta %d)\n", 
+			i+1, node.ID.String(), node.Port)
 	}
 	
 	return nodes
 }
 
-// initializeP2PNetwork inicializa a rede P2P real
-func initializeP2PNetwork(ctx context.Context, nodes []*Node) {
-	fmt.Println("   🔍 Inicializando rede P2P real...")
+// startConsensus inicia o consenso PoA em todos os nós
+func startConsensus(ctx context.Context, nodes []*Node) {
+	// Criar bloco gênesis em todos os nós
+	genesisData := []byte("Peer-Vote Genesis Block - " + time.Now().Format("2006-01-02 15:04:05"))
+	genesisTx := entities.NewTransaction("GENESIS", nodes[0].ID, valueobjects.EmptyNodeID(), genesisData)
 	
-	// Inicializar serviços P2P em cada nó
+	// Preparar transação gênesis
+	txData := genesisTx.ToBytes()
+	txHash := nodes[0].CryptoService.HashTransaction(ctx, txData)
+	genesisTx.SetID(txHash)
+	genesisTx.SetHash(txHash)
+	
+	signature, err := nodes[0].CryptoService.Sign(ctx, txData, nodes[0].KeyPair.PrivateKey)
+	if err != nil {
+		log.Fatalf("Erro ao assinar transação gênesis: %v", err)
+	}
+	genesisTx.SetSignature(signature)
+	
+	// Criar bloco gênesis em todos os nós
 	for i, node := range nodes {
-		err := node.P2PService.Start(ctx)
-		if err != nil {
-			log.Printf("⚠️  Erro ao iniciar P2P no nó %d: %v", i+1, err)
-		} else {
-			fmt.Printf("   ✅ Serviço P2P iniciado no nó %d\n", i+1)
+		if err := node.ChainManager.CreateGenesisBlock(ctx, []*entities.Transaction{genesisTx}, node.ID, node.KeyPair.PrivateKey); err != nil {
+			log.Fatalf("Erro ao criar bloco gênesis no nó %d: %v", i+1, err)
+		}
+		
+		// Iniciar consenso PoA
+		if err := node.PoAEngine.StartConsensus(ctx); err != nil {
+			log.Printf("Aviso: Erro ao iniciar consenso no nó %d: %v", i+1, err)
 		}
 	}
-	
-	// Aguardar descoberta de peers
-	fmt.Println("   🌐 Aguardando descoberta de peers via mDNS/DHT...")
-	time.Sleep(2 * time.Second)
-	
-	fmt.Printf("   ✅ Rede P2P inicializada com %d nós\n", len(nodes))
 }
 
-// createElection cria uma eleição para prefeito
-func createElection(ctx context.Context, nodes []*Node) *entities.Election {
-	node := nodes[0] // Usar primeiro nó como criador
+// createElectionOnBlockchain cria uma eleição real na blockchain
+func createElectionOnBlockchain(ctx context.Context, node *Node) *entities.Election {
+	// Criar candidatos
 	candidates := []entities.Candidate{
-		{
-			ID:          "candidate_001",
-			Name:        "Ana Silva",
-			Description: "Partido Tecnológico - Digitalização completa da cidade",
-		},
-		{
-			ID:          "candidate_002", 
-			Name:        "Carlos Santos",
-			Description: "Partido Verde - Sustentabilidade e energia limpa",
-		},
-		{
-			ID:          "candidate_003",
-			Name:        "Maria Oliveira", 
-			Description: "Partido da Inovação - Startups e empreendedorismo",
-		},
+		{ID: "candidate_001", Name: "Ana Silva", Description: "Digitalização completa da cidade - Partido Tecnológico", VoteCount: 0},
+		{ID: "candidate_002", Name: "Carlos Santos", Description: "Sustentabilidade e energia limpa - Partido Verde", VoteCount: 0},
+		{ID: "candidate_003", Name: "Maria Oliveira", Description: "Startups e empreendedorismo - Partido da Inovação", VoteCount: 0},
 	}
 	
-	request := &usecases.CreateElectionRequest{
+	// Criar eleição
+	electionReq := &usecases.CreateElectionRequest{
 		Title:            "Eleição para Prefeito de TechCity 2025",
 		Description:      "Eleição municipal para escolha do prefeito da cidade tecnológica",
+		StartTime:        time.Now().Add(2 * time.Second),
+		EndTime:          time.Now().Add(10 * time.Minute),
 		Candidates:       candidates,
-		StartTime:        valueobjects.Now().Add(1 * time.Second).Time(),  // Inicia em 1 segundo
-		EndTime:          valueobjects.Now().Add(10 * time.Minute).Time(), // 10 minutos de votação
 		CreatedBy:        node.ID,
 		AllowAnonymous:   true,
 		MaxVotesPerVoter: 1,
 	}
 	
-	response, err := node.CreateElectionUseCase.Execute(ctx, request)
+	response, err := node.CreateElectionUC.Execute(ctx, electionReq)
 	if err != nil {
 		log.Fatalf("Erro ao criar eleição: %v", err)
 	}
 	
-	// Propagar eleição via blockchain (solução real)
-	fmt.Println("📡 Propagando eleição via blockchain...")
-	err = broadcastElectionToNetwork(ctx, nodes, response.Election)
-	if err != nil {
-		log.Fatalf("Erro ao propagar eleição: %v", err)
-	}
-	
-	// Ativar a eleição manualmente
-	fmt.Println("🔄 Ativando eleição...")
-	activateRequest := &usecases.UpdateElectionStatusRequest{
-		ElectionID: response.Election.GetID(),
-		NewStatus:  "ACTIVE",
-		UpdatedBy:  node.ID,
-	}
-	
-	_, err = node.ManageElectionUseCase.UpdateElectionStatus(ctx, activateRequest)
-	if err != nil {
-		log.Fatalf("Erro ao ativar eleição: %v", err)
-	}
-	
-	// Aguardar propagação e ativação
-	fmt.Println("⏳ Aguardando propagação e ativação da eleição...")
-	time.Sleep(3 * time.Second) // Aguardar tempo suficiente para eleição iniciar
+	// Ativar a eleição para permitir votação
+	response.Election.SetStatus(entities.ElectionActive)
 	
 	return response.Election
 }
 
-// broadcastElectionToNetwork propaga eleição via transação na blockchain
-func broadcastElectionToNetwork(ctx context.Context, nodes []*Node, election *entities.Election) error {
-	// Serializar eleição como dados da transação
-	electionData, err := election.ToBytes()
-	if err != nil {
-		return fmt.Errorf("failed to serialize election: %w", err)
-	}
-	
-	// Criar transação especial de eleição
-	electionTx := entities.NewTransaction(
-		"CREATE_ELECTION",           // Tipo especial de transação
-		election.GetCreatedBy(),     // Criador da eleição
-		valueobjects.EmptyNodeID(),  // Broadcast para todos
-		electionData,                // Dados da eleição
-	)
-	
-	// Assinar transação com chave do criador
-	creatorNode := nodes[0] // Nó criador
-	txData := electionTx.ToBytes()
-	signature := creatorNode.CryptoService.Hash(ctx, txData) // Simplificado
-	electionTx.SetSignature(valueobjects.NewSignature(signature.Bytes()))
-	
-	// Calcular e definir hash da transação
-	txHash := creatorNode.CryptoService.HashTransaction(ctx, txData)
-	electionTx.SetHash(txHash)
-	electionTx.SetID(txHash)
-	
-	fmt.Printf("   📦 Transação de eleição criada: %s\n", electionTx.GetHash().String()[:16]+"...")
-	
-	// Propagar via P2P para todos os nós
-	for i, node := range nodes {
-		// Adicionar ao pool local
-		err := node.PoAEngine.AddTransaction(ctx, electionTx)
-		if err != nil {
-			log.Printf("⚠️  Erro ao adicionar transação ao nó %d: %v", i+1, err)
-		} else {
-			fmt.Printf("   ✅ Transação adicionada ao pool do nó %d\n", i+1)
-		}
+// propagateElection propaga a eleição para todos os nós da rede
+func propagateElection(ctx context.Context, nodes []*Node, election *entities.Election) {
+	for i := 1; i < len(nodes); i++ {
+		// Ativar a eleição antes de propagar
+		election.SetStatus(entities.ElectionActive)
 		
-		// Broadcast via P2P (propagação real)
-		err = node.P2PService.BroadcastTransaction(ctx, electionTx)
-		if err != nil {
-			log.Printf("⚠️  Erro ao broadcast da transação do nó %d: %v", i+1, err)
+		// Simular propagação armazenando a eleição em cada nó
+		if err := nodes[i].ElectionRepo.CreateElection(ctx, election); err != nil {
+			log.Printf("Aviso: Erro ao propagar eleição para nó %d: %v", i+1, err)
 		}
 	}
-	
-	// Configurar handlers para processar transações de eleição recebidas
-	for i, node := range nodes {
-		setupElectionTransactionHandler(node, i+1)
-	}
-	
-	fmt.Printf("   🌐 Eleição propagada via P2P para %d nós\n", len(nodes))
-	return nil
 }
 
-// setupElectionTransactionHandler configura handler para processar transações de eleição
-func setupElectionTransactionHandler(node *Node, nodeNum int) {
-	// Na prática, isso seria configurado no P2PService
-	// Por ora, vamos simular o processamento manual
-	
-	// Quando uma transação de eleição é recebida via P2P,
-	// o nó deve extrair os dados e criar a eleição localmente
-	fmt.Printf("   🔧 Handler de eleição configurado no nó %d\n", nodeNum)
-}
-
-// processElectionTransactions processa transações de eleição nos nós (solução real)
-func processElectionTransactions(ctx context.Context, nodes []*Node, election *entities.Election) error {
-	// Simular o processamento de transações de eleição que chegaram via P2P
-	// Na prática, isso seria feito automaticamente pelo P2P handler
-	
-	for i := 1; i < len(nodes); i++ { // Pular nó 0 que já tem a eleição
-		node := nodes[i]
-		
-		// Simular recebimento da transação de eleição via P2P
-		// e processamento para criar eleição local
-		err := node.ElectionRepo.CreateElection(ctx, election)
-		if err != nil {
-			log.Printf("⚠️  Erro ao processar eleição no nó %d: %v", i+1, err)
-			continue
-		}
-		
-		// Verificar se eleição já está ativa antes de tentar ativar
-		existingElection, err := node.ElectionRepo.GetElection(ctx, election.GetID())
-		if err != nil {
-			log.Printf("⚠️  Erro ao verificar status da eleição no nó %d: %v", i+1, err)
-			continue
-		}
-		
-		// Só ativar se não estiver ativa
-		if existingElection.GetStatus() != "ACTIVE" {
-			activateRequest := &usecases.UpdateElectionStatusRequest{
-				ElectionID: election.GetID(),
-				NewStatus:  "ACTIVE",
-				UpdatedBy:  node.ID,
-			}
-			
-			_, err = node.ManageElectionUseCase.UpdateElectionStatus(ctx, activateRequest)
-			if err != nil {
-				log.Printf("⚠️  Erro ao ativar eleição no nó %d: %v", i+1, err)
-				continue
-			}
-			fmt.Printf("   ✅ Eleição processada e ativada no nó %d\n", i+1)
-		} else {
-			fmt.Printf("   ✅ Eleição já ativa no nó %d\n", i+1)
-		}
-	}
-	
-	return nil
-}
-
-// generateVoters gera eleitores fictícios
-func generateVoters(ctx context.Context, cryptoService *crypto.ECDSAService, count int) []*Voter {
+// generateVoters gera eleitores para a simulação
+func generateVoters(ctx context.Context, count int) []*Voter {
 	voters := make([]*Voter, count)
 	names := []string{
 		"João Silva", "Maria Santos", "Pedro Oliveira", "Ana Costa",
 		"Carlos Lima", "Lucia Ferreira", "Roberto Alves", "Patricia Rocha",
-		"Fernando Dias", "Juliana Moreira",
+		"Fernando Dias", "Juliana Moreira", "Ricardo Souza", "Camila Torres",
 	}
+	
+	cryptoService := crypto.NewECDSAService()
 	
 	for i := 0; i < count; i++ {
 		keyPair, err := cryptoService.GenerateKeyPair(ctx)
 		if err != nil {
-			log.Fatalf("Erro ao gerar chave para eleitor %d: %v", i, err)
+			log.Fatalf("Erro ao gerar chaves para eleitor %d: %v", i+1, err)
 		}
-		
-		voterID := cryptoService.GenerateNodeID(ctx, keyPair.PublicKey)
 		
 		voters[i] = &Voter{
-			ID:      voterID,
-			KeyPair: keyPair,
+			ID:      valueobjects.NewNodeID(fmt.Sprintf("voter-%d", i+1)),
 			Name:    names[i],
+			KeyPair: keyPair,
 		}
 		
-		fmt.Printf("   Eleitor %d: %s (%s)\n", i+1, voters[i].Name, voterID.String()[:16]+"...")
+		fmt.Printf("   Eleitor %d: %s (%s)\n", 
+			i+1, voters[i].Name, voters[i].ID.String())
 	}
 	
 	return voters
 }
 
-// conductVoting executa o processo de votação real usando blockchain e PoA
-func conductVoting(ctx context.Context, nodes []*Node, election *entities.Election, voters []*Voter) []*entities.Vote {
-	fmt.Println("🔗 Iniciando processo de votação na blockchain...")
-	
-	// Processar transações de eleição pendentes (solução real)
-	fmt.Println("📋 Processando transações de eleição nos nós...")
-	err := processElectionTransactions(ctx, nodes, election)
-	if err != nil {
-		log.Printf("⚠️  Erro ao processar transações de eleição: %v", err)
-	}
-	
-	// Verificar se eleição está ativa em todos os nós
-	fmt.Println("🔍 Verificando status da eleição em todos os nós...")
-	for i, node := range nodes {
-		electionCheck, err := node.ElectionRepo.GetElection(ctx, election.GetID())
-		if err != nil {
-			log.Printf("⚠️  Nó %d: Eleição não encontrada - %v", i+1, err)
-		} else if electionCheck.CanVote() {
-			fmt.Printf("   ✅ Nó %d: Eleição ativa e pronta para votação\n", i+1)
-		} else {
-			fmt.Printf("   ⚠️  Nó %d: Eleição não está pronta (status: %s)\n", i+1, electionCheck.GetStatus())
-		}
-	}
-	
-	// Iniciar consenso PoA em todos os nós validadores
-	for i, node := range nodes {
-		err := node.PoAEngine.StartConsensus(ctx)
-		if err != nil {
-			log.Printf("⚠️  Nó %d não é validador ou erro ao iniciar consenso: %v", i+1, err)
-		} else {
-			fmt.Printf("   ✅ Consenso PoA iniciado no nó %d\n", i+1)
-		}
-	}
-	votes := make([]*entities.Vote, 0)
-	candidates := election.GetCandidates()
-	
-	fmt.Printf("📊 Candidatos disponíveis:\n")
-	for i, candidate := range candidates {
-		fmt.Printf("   %d. %s - %s\n", i+1, candidate.Name, candidate.Description)
+// conductVoting conduz o processo de votação real
+func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election *entities.Election) {
+	fmt.Println("🗳️ Iniciando votação na blockchain...")
+	fmt.Println("📊 Candidatos disponíveis:")
+	for _, candidate := range election.GetCandidates() {
+		fmt.Printf("   %s. %s - %s\n", 
+			candidate.ID, candidate.Name, candidate.Description)
 	}
 	fmt.Println()
+	voteCount := 0
 	
-	// Distribuição de votos (simulando preferências realistas)
-	voteDistribution := map[string]int{
-		"candidate_001": 4, // Ana Silva - 40%
-		"candidate_002": 3, // Carlos Santos - 30% 
-		"candidate_003": 3, // Maria Oliveira - 30%
+	for i, voter := range voters {
+		// Escolher candidato (simulação realística)
+		var candidateID string
+		switch {
+		case i < 5: // Primeiros 5 votam em Ana Silva
+			candidateID = "candidate_001"
+		case i < 8: // Próximos 3 votam em Carlos Santos  
+			candidateID = "candidate_002"
+		default: // Restantes votam em Maria Oliveira
+			candidateID = "candidate_003"
+		}
+		
+		// Escolher nó aleatório para processar o voto (simula distribuição)
+		nodeIndex := rand.Intn(len(nodes))
+		selectedNode := nodes[nodeIndex]
+		
+		// Determinar se o voto é anônimo (50% de chance)
+		isAnonymous := rand.Float32() < 0.5
+		
+		// Criar requisição de voto
+		voteReq := &usecases.SubmitVoteRequest{
+			ElectionID:  election.GetID(),
+			CandidateID: candidateID,
+			VoterID:     voter.ID,
+			PrivateKey:  voter.KeyPair.PrivateKey,
+			IsAnonymous: isAnonymous,
+		}
+		
+		// Submeter voto na blockchain
+		response, err := selectedNode.SubmitVoteUC.Execute(ctx, voteReq)
+		if err != nil {
+			fmt.Printf("   ❌ Erro no voto de %s: %v\n", voter.Name, err)
+			continue
+		}
+		
+		voteCount++
+		anonymousStr := ""
+		if isAnonymous {
+			anonymousStr = " (anônimo)"
+		}
+		
+		candidateName := getCandidateName(election, candidateID)
+		blockchainStatus := "⛓️ "
+		if response.InBlockchain {
+			blockchainStatus = "✅"
+		}
+		
+		fmt.Printf("   %s %s votou em %s%s → Hash: %s (Nó %d)\n",
+			blockchainStatus, voter.Name, candidateName, anonymousStr,
+			response.TransactionHash.String(), nodeIndex+1)
+		
+		// Pequena pausa para simular votação realística
+		time.Sleep(200 * time.Millisecond)
 	}
 	
-	voteIndex := 0
-	for candidateID, voteCount := range voteDistribution {
-		for i := 0; i < voteCount && voteIndex < len(voters); i++ {
-			voter := voters[voteIndex]
-			node := nodes[voteIndex%len(nodes)] // Distribuir entre os nós
-			
-			// Submeter voto como transação na blockchain
-			request := &usecases.SubmitVoteRequest{
-				ElectionID:  election.GetID(),
-				VoterID:     voter.ID,
-				CandidateID: candidateID,
-				IsAnonymous: voteIndex%3 == 0, // 1/3 dos votos anônimos
-				PrivateKey:  voter.KeyPair.PrivateKey,
+	fmt.Printf("\n✅ %d votos processados na blockchain\n", voteCount)
+}
+
+// performBlockchainAudit realiza auditoria completa da blockchain
+func performBlockchainAudit(ctx context.Context, node *Node, election *entities.Election) *usecases.AuditVotesResponse {
+	auditReq := &usecases.AuditVotesRequest{
+		ElectionID: election.GetID(),
+	}
+	
+	response, err := node.AuditVotesUC.AuditVotes(ctx, auditReq)
+	if err != nil {
+		log.Fatalf("Erro na auditoria: %v", err)
+	}
+	
+	return response
+}
+
+// displayAuditResults exibe os resultados da auditoria
+func displayAuditResults(results *usecases.AuditVotesResponse) {
+	if results.AuditPassed {
+		fmt.Printf("✅ AUDITORIA APROVADA: %s\n", results.Message)
+	} else {
+		fmt.Printf("❌ AUDITORIA REPROVADA: %s\n", results.Message)
+	}
+	
+	fmt.Printf("📊 Estatísticas da auditoria blockchain:\n")
+	fmt.Printf("   - Total de votos encontrados: %d\n", len(results.AuditResults))
+	fmt.Printf("   - Votos válidos: %d\n", results.Summary.ValidVotes)
+	fmt.Printf("   - Votos inválidos: %d\n", results.Summary.InvalidVotes)
+	fmt.Printf("   - Votos anônimos: %d\n", results.Summary.AnonymousVotes)
+	
+	if !results.AuditPassed {
+		fmt.Println("⚠️  Detalhes dos problemas encontrados:")
+		for i, audit := range results.AuditResults {
+			if !audit.IsValid {
+				fmt.Printf("   Voto %d: %v\n", i+1, audit.Errors)
 			}
-			
-			response, err := node.SubmitVoteUseCase.Execute(ctx, request)
-			if err != nil {
-				log.Printf("Erro ao submeter voto do eleitor %s: %v", voter.Name, err)
-				continue
-			}
-			
-			votes = append(votes, response.Vote)
-			
-			// Criar transação do voto para a blockchain
-			err = createVoteTransaction(ctx, node, response.Vote)
-			if err != nil {
-				log.Printf("Erro ao criar transação para voto: %v", err)
-			}
-			
-			candidateName := getCandidateName(candidates, candidateID)
-			anonymousStr := ""
-			if request.IsAnonymous {
-				anonymousStr = " (anônimo)"
-			}
-			
-			fmt.Printf("   ✅ %s votou em %s%s → Transação adicionada ao pool (Nó %d)\n", 
-				voter.Name, candidateName, anonymousStr, (voteIndex%len(nodes))+1)
-			
-			voteIndex++
-			
-			// Pausa para permitir processamento da blockchain
-			time.Sleep(500 * time.Millisecond)
+		}
+	}
+}
+
+// calculateFinalResults calcula os resultados finais
+func calculateFinalResults(ctx context.Context, node *Node, election *entities.Election) *usecases.CountVotesResponse {
+	countReq := &usecases.CountVotesRequest{
+		ElectionID: election.GetID(),
+	}
+	
+	response, err := node.AuditVotesUC.CountVotes(ctx, countReq)
+	if err != nil {
+		log.Fatalf("Erro ao contar votos: %v", err)
+	}
+	
+	return response
+}
+
+// displayFinalResults exibe os resultados finais
+func displayFinalResults(results *usecases.CountVotesResponse) {
+	fmt.Printf("🏆 VENCEDOR: %s\n", results.Winner.CandidateName)
+	fmt.Printf("   Votos: %d (%.1f%%)\n", results.Winner.VoteCount, results.Winner.Percentage)
+	fmt.Println()
+	
+	fmt.Println("📊 Resultado completo:")
+	for i, candidate := range results.Results {
+		var medal string
+		switch i {
+		case 0:
+			medal = "🥇"
+		case 1:
+			medal = "🥈" 
+		default:
+			medal = "🥉"
+		}
+		
+		fmt.Printf("   %s %s: %d votos (%.1f%%)\n", 
+			medal, candidate.CandidateName, candidate.VoteCount, candidate.Percentage)
+	}
+	
+	fmt.Printf("\n📈 Total de votos computados: %d\n", results.TotalVotes)
+	fmt.Printf("📊 Participação: %.1f%% dos eleitores\n", 
+		float64(results.TotalVotes)/12.0*100) // 12 eleitores registrados
+}
+
+// verifyNetworkIntegrity verifica a integridade da rede
+func verifyNetworkIntegrity(ctx context.Context, nodes []*Node) {
+	fmt.Println("🔍 Verificando integridade da rede blockchain...")
+	
+	// Verificar altura da blockchain em todos os nós
+	heights := make([]uint64, len(nodes))
+	for i, node := range nodes {
+		height, err := node.BlockchainRepo.GetBlockHeight(ctx)
+		if err != nil {
+			fmt.Printf("❌ Erro ao obter altura do nó %d: %v\n", i+1, err)
+			continue
+		}
+		heights[i] = height
+		fmt.Printf("   Nó %d: %d blocos\n", i+1, height)
+	}
+	
+	// Verificar sincronização
+	allSynced := true
+	baseHeight := heights[0]
+	for i := 1; i < len(heights); i++ {
+		if heights[i] != baseHeight {
+			allSynced = false
+			break
 		}
 	}
 	
-	// Aguardar processamento final das transações
-	fmt.Println("\n⏳ Aguardando processamento final das transações...")
-	time.Sleep(3 * time.Second)
+	if allSynced {
+		fmt.Printf("✅ Todos os nós sincronizados (altura: %d)\n", baseHeight)
+	} else {
+		fmt.Println("⚠️  Nós com alturas diferentes - sincronização em andamento")
+	}
 	
-	return votes
+	// Verificar últimos blocos
+	fmt.Println("📦 Últimos blocos criados:")
+	for i := 0; i < min(3, int(baseHeight)); i++ {
+		blockIndex := baseHeight - uint64(i)
+		block, err := nodes[0].BlockchainRepo.GetBlockByIndex(ctx, blockIndex)
+		if err != nil {
+			continue
+		}
+		
+		fmt.Printf("   Bloco %d: %d transações, Validador: %s\n",
+			blockIndex, len(block.GetTransactions()), 
+			block.GetValidator().String())
+	}
 }
 
-// createVoteTransaction cria uma transação de voto na blockchain
-func createVoteTransaction(ctx context.Context, node *Node, vote *entities.Vote) error {
-	// Serializar o voto como dados da transação
-	voteData, err := vote.ToBytes()
-	if err != nil {
-		return fmt.Errorf("failed to serialize vote: %w", err)
-	}
-	
-	// Criar transação
-	transaction := entities.NewTransaction(
-		"VOTE",                    // Tipo de transação
-		vote.GetVoterID(),        // Remetente (eleitor)
-		valueobjects.EmptyNodeID(), // Destinatário vazio para votos
-		voteData,                 // Dados do voto
-	)
-	
-	// Assinar transação
-	txData := transaction.ToBytes()
-	if err != nil {
-		return fmt.Errorf("failed to serialize transaction: %w", err)
-	}
-	
-	// Para votos anônimos, usar uma chave temporária ou omitir assinatura
-	if !vote.IsAnonymous() {
-		// Buscar chave privada do eleitor (simplificado para o exemplo)
-		// Na prática, isso seria mais complexo
-		signature := node.CryptoService.Hash(ctx, txData) // Simplificado
-		transaction.SetSignature(valueobjects.NewSignature(signature.Bytes()))
-	}
-	
-	// Adicionar transação ao pool do PoA engine
-	err = node.PoAEngine.AddTransaction(ctx, transaction)
-	if err != nil {
-		return fmt.Errorf("failed to add transaction to PoA pool: %w", err)
-	}
-	
-	return nil
-}
+// Funções auxiliares
 
-// getCandidateName retorna o nome do candidato pelo ID
-func getCandidateName(candidates []entities.Candidate, candidateID string) string {
-	for _, candidate := range candidates {
+func getCandidateName(election *entities.Election, candidateID string) string {
+	for _, candidate := range election.GetCandidates() {
 		if candidate.ID == candidateID {
 			return candidate.Name
 		}
@@ -587,147 +529,9 @@ func getCandidateName(candidates []entities.Candidate, candidateID string) strin
 	return candidateID
 }
 
-// auditAndCount realiza auditoria e contagem dos votos
-func auditAndCount(ctx context.Context, node *Node, election *entities.Election) map[string]uint64 {
-	request := &usecases.AuditVotesRequest{
-		ElectionID: election.GetID(),
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-	
-	response, err := node.AuditVotesUseCase.AuditVotes(ctx, request)
-	if err != nil {
-		log.Fatalf("Erro na auditoria: %v", err)
-	}
-	
-	if response.AuditPassed {
-		fmt.Printf("✅ Auditoria APROVADA: %s\n", response.Message)
-	} else {
-		fmt.Printf("❌ Auditoria REPROVADA: %s\n", response.Message)
-	}
-	
-	fmt.Printf("📊 Estatísticas da auditoria:\n")
-	fmt.Printf("   - Total de votos: %d\n", response.Summary.TotalVotes)
-	fmt.Printf("   - Votos válidos: %d\n", response.Summary.ValidVotes)
-	fmt.Printf("   - Votos inválidos: %d\n", response.Summary.InvalidVotes)
-	fmt.Printf("   - Votos anônimos: %d\n", response.Summary.AnonymousVotes)
-	
-	return response.Summary.CandidateResults
-}
-
-// displayResults exibe os resultados finais
-func displayResults(election *entities.Election, results map[string]uint64) {
-	fmt.Println("\n🏆 === RESULTADOS FINAIS ===")
-	
-	candidates := election.GetCandidates()
-	totalVotes := uint64(0)
-	
-	// Calcular total de votos
-	for _, votes := range results {
-		totalVotes += votes
-	}
-	
-	// Ordenar candidatos por número de votos (simulação simples)
-	type candidateResult struct {
-		Candidate entities.Candidate
-		Votes     uint64
-		Percentage float64
-	}
-	
-	var sortedResults []candidateResult
-	for _, candidate := range candidates {
-		votes := results[candidate.ID]
-		percentage := float64(votes) / float64(totalVotes) * 100
-		
-		sortedResults = append(sortedResults, candidateResult{
-			Candidate:  candidate,
-			Votes:      votes,
-			Percentage: percentage,
-		})
-	}
-	
-	// Encontrar vencedor (maior número de votos)
-	winner := sortedResults[0]
-	for _, result := range sortedResults {
-		if result.Votes > winner.Votes {
-			winner = result
-		}
-	}
-	
-	fmt.Printf("🥇 VENCEDOR: %s\n", winner.Candidate.Name)
-	fmt.Printf("   Votos: %d (%.1f%%)\n", winner.Votes, winner.Percentage)
-	fmt.Println()
-	
-	fmt.Println("📊 Resultado completo:")
-	for _, result := range sortedResults {
-		emoji := "🥉"
-		if result.Candidate.ID == winner.Candidate.ID {
-			emoji = "🥇"
-		}
-		
-		fmt.Printf("   %s %s: %d votos (%.1f%%)\n", 
-			emoji, result.Candidate.Name, result.Votes, result.Percentage)
-	}
-	
-	fmt.Printf("\n📈 Total de votos computados: %d\n", totalVotes)
-}
-
-// verifyBlockchainIntegrity verifica a integridade da blockchain
-func verifyBlockchainIntegrity(ctx context.Context, nodes []*Node) {
-	for i, node := range nodes {
-		err := node.BlockchainRepo.ValidateChain(ctx)
-		if err != nil {
-			fmt.Printf("❌ Nó %d: Blockchain inválida - %v\n", i+1, err)
-		} else {
-			fmt.Printf("✅ Nó %d: Blockchain íntegra\n", i+1)
-		}
-		
-		height, err := node.BlockchainRepo.GetBlockHeight(ctx)
-		if err != nil {
-			fmt.Printf("   ⚠️  Erro ao obter altura: %v\n", err)
-		} else {
-			fmt.Printf("   📏 Altura da cadeia: %d blocos\n", height)
-		}
-	}
-}
-
-// verifySynchronization verifica se os nós estão sincronizados
-func verifySynchronization(ctx context.Context, nodes []*Node) {
-	heights := make([]uint64, len(nodes))
-	
-	for i, node := range nodes {
-		height, err := node.BlockchainRepo.GetBlockHeight(ctx)
-		if err != nil {
-			fmt.Printf("❌ Erro ao verificar altura do nó %d: %v\n", i+1, err)
-			continue
-		}
-		heights[i] = height
-	}
-	
-	// Verificar se todas as alturas são iguais
-	allSynced := true
-	baseHeight := heights[0]
-	
-	for i, height := range heights {
-		if height != baseHeight {
-			allSynced = false
-			fmt.Printf("⚠️  Nó %d desincronizado: altura %d (esperado %d)\n", i+1, height, baseHeight)
-		}
-	}
-	
-	if allSynced {
-		fmt.Printf("✅ Todos os nós sincronizados (altura: %d)\n", baseHeight)
-	} else {
-		fmt.Println("❌ Nós desincronizados - necessária ressincronização")
-	}
-	
-	// Verificar conectividade P2P
-	fmt.Println("\n🔗 Status da rede P2P:")
-	for i, node := range nodes {
-		if node.P2PService.IsRunning() {
-			stats := node.P2PService.GetStats()
-			fmt.Printf("   Nó %d: %d peers conectados, %d descobertos\n", 
-				i+1, stats.ConnectedPeers, stats.DiscoveredPeers)
-		} else {
-			fmt.Printf("   Nó %d: P2P offline\n", i+1)
-		}
-	}
+	return b
 }

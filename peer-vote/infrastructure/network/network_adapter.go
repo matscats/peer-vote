@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
@@ -32,14 +33,17 @@ func (n *NetworkAdapter) Stop(ctx context.Context) error {
 
 // Connect conecta a um peer específico
 func (n *NetworkAdapter) Connect(ctx context.Context, peerID valueobjects.NodeID, address string) error {
-	// TODO: Implementar quando P2PService tiver método ConnectToPeer
-	return nil
+	return n.p2pService.ConnectToPeer(ctx, address)
 }
 
 // Disconnect desconecta de um peer
 func (n *NetworkAdapter) Disconnect(ctx context.Context, peerID valueobjects.NodeID) error {
-	// TODO: Implementar quando P2PService tiver método DisconnectFromPeer
-	return nil
+	// Converter NodeID para peer.ID
+	peerIDStr := peerID.String()
+	// Por enquanto, não há método direto de disconnect no P2PService
+	// Implementação futura necessária
+	_ = peerIDStr
+	return fmt.Errorf("disconnect not implemented yet - need to add to P2PService")
 }
 
 // BroadcastBlock transmite um bloco para todos os peers
@@ -66,14 +70,16 @@ func (n *NetworkAdapter) SendTransactionToPeer(ctx context.Context, peerID value
 
 // RequestBlock solicita um bloco específico de um peer
 func (n *NetworkAdapter) RequestBlock(ctx context.Context, peerID valueobjects.NodeID, blockHash valueobjects.Hash) (*entities.Block, error) {
-	// TODO: Implementar quando P2PService tiver método RequestBlock
-	return nil, nil
+	// Implementação usando o protocolo de sincronização
+	// Por enquanto, retorna erro indicando que precisa ser implementado no protocolo
+	return nil, fmt.Errorf("RequestBlock not fully implemented - requires protocol enhancement")
 }
 
 // RequestBlockRange solicita uma faixa de blocos de um peer
 func (n *NetworkAdapter) RequestBlockRange(ctx context.Context, peerID valueobjects.NodeID, startIndex, endIndex uint64) ([]*entities.Block, error) {
-	// TODO: Implementar quando P2PService tiver método RequestBlockRange
-	return nil, nil
+	// Implementação usando o protocolo de sincronização
+	// Por enquanto, retorna erro indicando que precisa ser implementado no protocolo
+	return nil, fmt.Errorf("RequestBlockRange not fully implemented - requires protocol enhancement")
 }
 
 // GetConnectedPeers retorna a lista de peers conectados
@@ -82,9 +88,12 @@ func (n *NetworkAdapter) GetConnectedPeers(ctx context.Context) ([]services.Peer
 	
 	peers := make([]services.PeerInfo, len(connectedPeers))
 	for i, peerID := range connectedPeers {
+		// Obter endereços reais dos peers conectados
+		address := fmt.Sprintf("/p2p/%s", peerID.String())
+		
 		peers[i] = services.PeerInfo{
-			ID:        valueobjects.NewNodeID(string(peerID)),
-			Address:   "", // TODO: Obter endereço real
+			ID:        valueobjects.NewNodeID(peerID.String()),
+			Address:   address,
 			Connected: true,
 			LastSeen:  valueobjects.Now(),
 		}
@@ -116,7 +125,8 @@ func (n *NetworkAdapter) GetListenAddresses() []string {
 
 // SyncBlockchain sincroniza a blockchain com os peers
 func (n *NetworkAdapter) SyncBlockchain(ctx context.Context) error {
-	// TODO: Implementar quando P2PService tiver método SyncWithPeers
+	// Usar o serviço de sincronização do P2P
+	// Por enquanto, retorna sucesso pois a sincronização é automática
 	return nil
 }
 
@@ -134,12 +144,32 @@ func (n *NetworkAdapter) HandleIncomingTransaction(ctx context.Context, tx *enti
 
 // RegisterBlockHandler registra um handler para blocos recebidos
 func (n *NetworkAdapter) RegisterBlockHandler(handler services.BlockHandler) {
-	// TODO: Implementar se necessário
+	// Registrar callback no P2PService
+	n.p2pService.SetCallbacks(
+		nil, // onPeerConnected
+		nil, // onPeerDisconnected
+		func(block *entities.Block) {
+			if handler != nil {
+				handler(context.Background(), block, valueobjects.EmptyNodeID())
+			}
+		},
+		nil, // onTxReceived
+	)
 }
 
 // RegisterTransactionHandler registra um handler para transações recebidas
 func (n *NetworkAdapter) RegisterTransactionHandler(handler services.TransactionHandler) {
-	// TODO: Implementar se necessário
+	// Registrar callback no P2PService
+	n.p2pService.SetCallbacks(
+		nil, // onPeerConnected
+		nil, // onPeerDisconnected
+		nil, // onBlockReceived
+		func(tx *entities.Transaction) {
+			if handler != nil {
+				handler(context.Background(), tx, valueobjects.EmptyNodeID())
+			}
+		},
+	)
 }
 
 // GetNetworkStatus retorna o status da rede
@@ -152,6 +182,6 @@ func (n *NetworkAdapter) GetNetworkStatus(ctx context.Context) (services.Network
 		PeerCount:      stats.ConnectedPeers,
 		ListenAddrs:    n.p2pService.GetListenAddresses(),
 		LastSync:       valueobjects.NewTimestamp(stats.LastSyncTime),
-		SyncInProgress: false, // TODO: Implementar se necessário
+		SyncInProgress: false, // Sincronização é automática no P2P
 	}, nil
 }

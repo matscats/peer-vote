@@ -70,8 +70,7 @@ func runStartCommand(cmd *cobra.Command, args []string) {
 	// Serviços de infraestrutura
 	cryptoService := crypto.NewECDSAService()
 	electionRepo := persistence.NewMemoryElectionRepository()
-	voteRepo := persistence.NewMemoryVoteRepository()
-	blockchainRepo := persistence.NewMemoryBlockchainRepository()
+	blockchainRepo := persistence.NewMemoryBlockchainRepository(cryptoService)
 	
 	// Serviços de blockchain
 	chainManager := blockchain.NewChainManager(blockchainRepo, cryptoService)
@@ -89,13 +88,13 @@ func runStartCommand(cmd *cobra.Command, args []string) {
 	poaEngine := consensus.NewPoAEngine(validatorManager, chainManager, cryptoService, myNodeID, keyPair.PrivateKey)
 	
 	// Serviços de domínio
-	validationService := services.NewVotingValidator(electionRepo, voteRepo, cryptoService)
+	validationService := services.NewVotingValidator(electionRepo, nil, cryptoService)
 	
 	// Casos de uso
 	createElectionUseCase := usecases.NewCreateElectionUseCase(electionRepo, cryptoService, validationService)
-	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, voteRepo, validationService)
-	submitVoteUseCase := usecases.NewSubmitVoteUseCase(electionRepo, voteRepo, cryptoService, validationService)
-	auditVotesUseCase := usecases.NewAuditVotesUseCase(electionRepo, voteRepo, cryptoService, validationService)
+	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService)
+	submitVoteUseCase := usecases.NewSubmitVoteUseCase(electionRepo, chainManager, poaEngine, cryptoService, validationService)
+	auditVotesUseCase := usecases.NewAuditVotesUseCase(electionRepo, chainManager, cryptoService, validationService)
 
 	// Serviço P2P (se habilitado)
 	var p2pService *network.P2PService

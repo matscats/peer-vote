@@ -496,9 +496,59 @@ func (p2p *P2PService) deserializeTransaction(serialized *SerializedTransaction)
 }
 
 func (p2p *P2PService) deserializeBlock(serialized *SerializedBlock) (*entities.Block, error) {
-	// Implementação simplificada - em produção seria mais robusta
-	// Por enquanto, retornar erro indicando que precisa ser implementado
-	return nil, fmt.Errorf("block deserialization not fully implemented yet")
+	if serialized == nil {
+		return nil, fmt.Errorf("serialized block is nil")
+	}
+	
+	// Converter campos básicos
+	previousHash, err := valueobjects.NewHashFromString(serialized.PreviousHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid previous hash: %w", err)
+	}
+	
+	merkleRoot, err := valueobjects.NewHashFromString(serialized.MerkleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid merkle root: %w", err)
+	}
+	
+	validator := valueobjects.NewNodeID(serialized.Validator)
+	
+	// Deserializar transações
+	transactions := make([]*entities.Transaction, len(serialized.Transactions))
+	for i, serializedTx := range serialized.Transactions {
+		tx, err := p2p.deserializeTransaction(serializedTx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deserialize transaction %d: %w", i, err)
+		}
+		transactions[i] = tx
+	}
+	
+	// Criar bloco usando o BlockBuilder
+	blockBuilder := blockchain.NewBlockBuilder(p2p.cryptoService)
+	block, err := blockBuilder.BuildBlock(
+		context.Background(),
+		serialized.Index,
+		previousHash,
+		transactions,
+		validator,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build block: %w", err)
+	}
+	
+	// Definir merkle root (se diferente do calculado)
+	block.SetMerkleRoot(merkleRoot)
+	
+	// Definir assinatura se presente
+	if serialized.Signature != "" {
+		signature, err := valueobjects.NewSignatureFromString(serialized.Signature)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signature: %w", err)
+		}
+		block.SetSignature(signature)
+	}
+	
+	return block, nil
 }
 
 // IsRunning verifica se o serviço está rodando

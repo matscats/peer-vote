@@ -9,8 +9,10 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
+	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
+	"github.com/matscats/peer-vote/peer-vote/infrastructure/crypto"
 )
 
 // SyncService gerencia sincronização de blockchain entre peers
@@ -585,9 +587,116 @@ func (ss *SyncService) serializeTransaction(tx *entities.Transaction) *Serialize
 }
 
 func (ss *SyncService) deserializeBlock(serialized *SerializedBlock) (*entities.Block, error) {
-	// Implementação simplificada - em produção seria mais robusta
-	// Por enquanto, retornar erro indicando que precisa ser implementado
-	return nil, fmt.Errorf("block deserialization not fully implemented yet")
+	if serialized == nil {
+		return nil, fmt.Errorf("serialized block is nil")
+	}
+	
+	// Converter campos básicos
+	previousHash, err := valueobjects.NewHashFromString(serialized.PreviousHash)
+	if err != nil {
+		return nil, fmt.Errorf("invalid previous hash: %w", err)
+	}
+	
+	merkleRoot, err := valueobjects.NewHashFromString(serialized.MerkleRoot)
+	if err != nil {
+		return nil, fmt.Errorf("invalid merkle root: %w", err)
+	}
+	
+	validator := valueobjects.NewNodeID(serialized.Validator)
+	
+	// Deserializar transações
+	transactions := make([]*entities.Transaction, len(serialized.Transactions))
+	for i, serializedTx := range serialized.Transactions {
+		tx, err := ss.deserializeTransaction(serializedTx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to deserialize transaction %d: %w", i, err)
+		}
+		transactions[i] = tx
+	}
+	
+	// Criar bloco usando o BlockBuilder através do ChainManager
+	block, err := ss.chainManager.ProposeBlock(
+		context.Background(),
+		transactions,
+		validator,
+		nil, // Não temos a chave privada aqui
+	)
+	if err != nil {
+		// Se não conseguir propor, criar manualmente
+		blockBuilder := blockchain.NewBlockBuilder(ss.getCryptoService())
+		block, err = blockBuilder.BuildBlock(
+			context.Background(),
+			serialized.Index,
+			previousHash,
+			transactions,
+			validator,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to build block: %w", err)
+		}
+	}
+	
+	// Definir campos corretos
+	block.SetMerkleRoot(merkleRoot)
+	
+	// Definir assinatura se presente
+	if serialized.Signature != "" {
+		signature, err := valueobjects.NewSignatureFromString(serialized.Signature)
+		if err != nil {
+			return nil, fmt.Errorf("invalid signature: %w", err)
+		}
+		block.SetSignature(signature)
+	}
+	
+	return block, nil
+}
+
+// deserializeTransaction deserializa uma transação
+func (ss *SyncService) deserializeTransaction(serialized *SerializedTransaction) (*entities.Transaction, error) {
+	if serialized == nil {
+		return nil, fmt.Errorf("serialized transaction is nil")
+	}
+	
+	// Converter campos
+	from := valueobjects.NewNodeID(serialized.From)
+	to := valueobjects.NewNodeID(serialized.To)
+	
+	// Decodificar dados (assumindo base64)
+	data := []byte(serialized.Data) // Simplificado por enquanto
+	
+	tx := entities.NewTransaction(
+		entities.TransactionType(serialized.Type),
+		from,
+		to,
+		data,
+	)
+	
+	// Definir campos adicionais
+	if serialized.ID != "" {
+		id, err := valueobjects.NewHashFromString(serialized.ID)
+		if err == nil {
+			tx.SetID(id)
+		}
+	}
+	
+	if serialized.Signature != "" {
+		sig, err := valueobjects.NewSignatureFromString(serialized.Signature)
+		if err == nil {
+			tx.SetSignature(sig)
+		}
+	}
+	
+	// Nota: timestamp será o atual do momento da criação
+	// Em uma implementação completa, seria necessário adicionar SetTimestamp à Transaction
+	
+	return tx, nil
+}
+
+// getCryptoService obtém o serviço de criptografia (método auxiliar)
+func (ss *SyncService) getCryptoService() services.CryptographyService {
+	// Por enquanto, criar um novo serviço ECDSA
+	// Em uma implementação real, isso seria injetado
+	return crypto.NewECDSAService()
 }
 
 func (ss *SyncService) calculateBlockHash(block *entities.Block) valueobjects.Hash {

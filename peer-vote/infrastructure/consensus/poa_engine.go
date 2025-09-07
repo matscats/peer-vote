@@ -11,6 +11,7 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
+	"github.com/matscats/peer-vote/peer-vote/infrastructure/crypto"
 )
 
 // PoAEngine implementa o algoritmo de consenso Proof of Authority
@@ -20,6 +21,7 @@ type PoAEngine struct {
 	roundRobin       *RoundRobinScheduler
 	chainManager     *blockchain.ChainManager
 	cryptoService    services.CryptographyService
+	keyRepository    crypto.KeyRepository // Repositório de chaves para validação
 	
 	// Estado do consenso
 	isRunning        bool
@@ -63,16 +65,24 @@ func NewPoAEngine(
 		roundRobin:       roundRobin,
 		chainManager:     chainManager,
 		cryptoService:    cryptoService,
+		keyRepository:    nil, // Será definido depois
 		myNodeID:         myNodeID,
 		myPrivateKey:     myPrivateKey,
 		pendingTxs:       make([]*entities.Transaction, 0),
 		maxPendingTxs:    10000,
-		blockInterval:    time.Second * 30,
+		blockInterval:    time.Second * 2,
 		minTxPerBlock:    1,
 		maxTxPerBlock:    1000,
 		newTxChan:        make(chan *entities.Transaction, 1000),
 		stopChan:         make(chan struct{}),
 	}
+}
+
+// SetKeyRepository define o repositório de chaves para validação
+func (poa *PoAEngine) SetKeyRepository(keyRepo crypto.KeyRepository) {
+	poa.mu.Lock()
+	defer poa.mu.Unlock()
+	poa.keyRepository = keyRepo
 }
 
 // StartConsensus inicia o processo de consenso
@@ -188,15 +198,52 @@ func (poa *PoAEngine) ValidateBlock(ctx context.Context, block *entities.Block) 
 		return fmt.Errorf("block validator %s is not authorized", validator.ShortString())
 	}
 
-	// Verificar assinatura do bloco
-	publicKey, err := poa.validatorManager.GetValidatorPublicKey(ctx, validator)
-	if err != nil {
-		return fmt.Errorf("failed to get validator public key: %w", err)
-	}
+	// Verificar assinatura do bloco usando repositório de chaves se disponível
+	if poa.keyRepository != nil {
+		// Usar repositório de chaves para validação mais robusta
+		blockData, err := poa.serializeBlockForValidation(ctx, block)
+		if err != nil {
+			return fmt.Errorf("failed to serialize block for validation: %w", err)
+		}
+		
+		ecdsaService, ok := poa.cryptoService.(*crypto.ECDSAService)
+		if ok {
+			isValid, err := ecdsaService.ValidateSignatureWithKeyRepo(
+				ctx, 
+				blockData, 
+				block.GetSignature(), 
+				validator, 
+				poa.keyRepository,
+			)
+			if err != nil {
+				return fmt.Errorf("signature validation failed: %w", err)
+			}
+			if !isValid {
+				return fmt.Errorf("block signature is invalid")
+			}
+		} else {
+			// Fallback para validação tradicional
+			publicKey, err := poa.validatorManager.GetValidatorPublicKey(ctx, validator)
+			if err != nil {
+				return fmt.Errorf("failed to get validator public key: %w", err)
+			}
 
-	blockBuilder := blockchain.NewBlockBuilder(poa.cryptoService)
-	if err := blockBuilder.ValidateBlockSignature(ctx, block, publicKey); err != nil {
-		return fmt.Errorf("block signature validation failed: %w", err)
+			blockBuilder := blockchain.NewBlockBuilder(poa.cryptoService)
+			if err := blockBuilder.ValidateBlockSignature(ctx, block, publicKey); err != nil {
+				return fmt.Errorf("block signature validation failed: %w", err)
+			}
+		}
+	} else {
+		// Validação tradicional sem repositório de chaves
+		publicKey, err := poa.validatorManager.GetValidatorPublicKey(ctx, validator)
+		if err != nil {
+			return fmt.Errorf("failed to get validator public key: %w", err)
+		}
+
+		blockBuilder := blockchain.NewBlockBuilder(poa.cryptoService)
+		if err := blockBuilder.ValidateBlockSignature(ctx, block, publicKey); err != nil {
+			return fmt.Errorf("block signature validation failed: %w", err)
+		}
 	}
 
 	// Verificar se é o validador correto para este round
@@ -497,4 +544,33 @@ func (poa *PoAEngine) ClearPendingTransactions() {
 	defer poa.mu.Unlock()
 
 	poa.pendingTxs = make([]*entities.Transaction, 0)
+}
+
+// serializeBlockForValidation serializa um bloco para validação de assinatura
+func (poa *PoAEngine) serializeBlockForValidation(ctx context.Context, block *entities.Block) ([]byte, error) {
+	// Criar estrutura determinística para validação
+	blockData := struct {
+		Index        uint64
+		PreviousHash string
+		MerkleRoot   string
+		Timestamp    int64
+		Validator    string
+	}{
+		Index:        block.GetIndex(),
+		PreviousHash: block.GetPreviousHash().String(),
+		MerkleRoot:   block.GetMerkleRoot().String(),
+		Timestamp:    block.GetTimestamp().Unix(),
+		Validator:    block.GetValidator().String(),
+	}
+	
+	// Serializar como string determinística
+	data := fmt.Sprintf("%d|%s|%s|%d|%s",
+		blockData.Index,
+		blockData.PreviousHash,
+		blockData.MerkleRoot,
+		blockData.Timestamp,
+		blockData.Validator,
+	)
+	
+	return []byte(data), nil
 }

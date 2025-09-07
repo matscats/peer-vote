@@ -249,6 +249,32 @@ func (e *ECDSAService) ValidateSignature(ctx context.Context, data []byte, signa
 	return false, errors.New("ValidateSignature requires a key repository - not implemented yet")
 }
 
+// ValidateSignatureWithKeyRepo valida uma assinatura usando um repositório de chaves
+func (e *ECDSAService) ValidateSignatureWithKeyRepo(ctx context.Context, data []byte, signature valueobjects.Signature, nodeID valueobjects.NodeID, keyRepo KeyRepository) (bool, error) {
+	if nodeID.IsEmpty() {
+		return false, errors.New("nodeID cannot be empty")
+	}
+	
+	if signature.IsEmpty() {
+		return false, errors.New("signature cannot be empty")
+	}
+	
+	// Recuperar chave pública do repositório
+	publicKey, err := keyRepo.GetPublicKey(ctx, nodeID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get public key for node %s: %w", nodeID.String(), err)
+	}
+	
+	// Usar o método de verificação existente
+	return e.Verify(ctx, data, signature, publicKey)
+}
+
+// KeyRepository define interface para repositório de chaves
+type KeyRepository interface {
+	GetPublicKey(ctx context.Context, nodeID valueobjects.NodeID) (*services.PublicKey, error)
+	StorePublicKey(ctx context.Context, nodeID valueobjects.NodeID, publicKey *services.PublicKey) error
+}
+
 // RecoverPublicKey recupera a chave pública de uma assinatura (se possível)
 func (e *ECDSAService) RecoverPublicKey(ctx context.Context, data []byte, signature valueobjects.Signature) (*services.PublicKey, error) {
 	// ECDSA padrão não permite recuperação de chave pública

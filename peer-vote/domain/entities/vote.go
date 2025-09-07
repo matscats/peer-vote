@@ -23,12 +23,14 @@ type Vote struct {
 
 // VoteData representa os dados serializáveis de um voto
 type VoteData struct {
+	ID          string `json:"id"`
 	ElectionID  string `json:"election_id"`
 	VoterID     string `json:"voter_id,omitempty"` // Omitido se anônimo
 	CandidateID string `json:"candidate_id"`
 	Timestamp   int64  `json:"timestamp"`
 	IsAnonymous bool   `json:"is_anonymous"`
 	Nonce       string `json:"nonce"`
+	Signature   string `json:"signature"`
 }
 
 // generateNonce gera um nonce aleatório para garantir unicidade
@@ -121,7 +123,7 @@ func (v *Vote) IsValid() bool {
 	return true
 }
 
-// ToBytes serializa o voto para bytes
+// ToBytes serializa o voto para bytes (sem incluir o ID para evitar problemas circulares)
 func (v *Vote) ToBytes() ([]byte, error) {
 	data := VoteData{
 		ElectionID:  v.electionID.String(),
@@ -129,6 +131,27 @@ func (v *Vote) ToBytes() ([]byte, error) {
 		Timestamp:   v.timestamp.Unix(),
 		IsAnonymous: v.isAnonymous,
 		Nonce:       v.nonce,
+		Signature:   v.signature.String(),
+	}
+
+	// Só inclui o voter ID se não for anônimo
+	if !v.isAnonymous {
+		data.VoterID = v.voterID.String()
+	}
+
+	return json.Marshal(data)
+}
+
+// ToBytesWithID serializa o voto para bytes incluindo o ID (para armazenamento completo)
+func (v *Vote) ToBytesWithID() ([]byte, error) {
+	data := VoteData{
+		ID:          v.id.String(),
+		ElectionID:  v.electionID.String(),
+		CandidateID: v.candidateID,
+		Timestamp:   v.timestamp.Unix(),
+		IsAnonymous: v.isAnonymous,
+		Nonce:       v.nonce,
+		Signature:   v.signature.String(),
 	}
 
 	// Só inclui o voter ID se não for anônimo
@@ -146,19 +169,40 @@ func (v *Vote) FromBytes(data []byte) error {
 		return err
 	}
 
+	// Restaurar ID
+	if voteData.ID != "" {
+		id, err := valueobjects.NewHashFromString(voteData.ID)
+		if err != nil {
+			return err
+		}
+		v.id = id
+	}
+
+	// Restaurar Election ID
 	electionID, err := valueobjects.NewHashFromString(voteData.ElectionID)
 	if err != nil {
 		return err
 	}
-
 	v.electionID = electionID
+
+	// Restaurar outros campos
 	v.candidateID = voteData.CandidateID
 	v.timestamp = valueobjects.Unix(voteData.Timestamp, 0)
 	v.isAnonymous = voteData.IsAnonymous
 	v.nonce = voteData.Nonce
 
+	// Restaurar Voter ID se não for anônimo
 	if !v.isAnonymous && voteData.VoterID != "" {
 		v.voterID = valueobjects.NewNodeID(voteData.VoterID)
+	}
+
+	// Restaurar assinatura
+	if voteData.Signature != "" {
+		signature, err := valueobjects.NewSignatureFromString(voteData.Signature)
+		if err != nil {
+			return err
+		}
+		v.signature = signature
 	}
 
 	return nil

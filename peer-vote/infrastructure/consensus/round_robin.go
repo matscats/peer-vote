@@ -49,8 +49,8 @@ func NewRoundRobinScheduler(validatorManager *ValidatorManager) *RoundRobinSched
 	return &RoundRobinScheduler{
 		validatorManager: validatorManager,
 		currentRound:     0,
-		roundDuration:    time.Second * 30, // 30 segundos por round
-		timeoutDuration:  time.Second * 25, // 25 segundos de timeout
+		roundDuration:    time.Second * 5,  // 5 segundos por round
+		timeoutDuration:  time.Second * 4,  // 4 segundos de timeout
 		activeValidators: make([]valueobjects.NodeID, 0),
 		currentIndex:     0,
 		roundChangeChan:  make(chan RoundChangeEvent, 100),

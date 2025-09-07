@@ -1,0 +1,185 @@
+# Peer-Vote Configuration File
+
+# Node Configuration
+node:
+  # Unique identifier for this node (will be generated if empty)
+  id: ""
+  # Network addresses to listen on
+  listen_addresses:
+    - "/ip4/0.0.0.0/tcp/4001"
+    - "/ip6/::/tcp/4001"
+  # Bootstrap nodes to connect to
+  bootstrap_nodes:
+    - "/ip4/127.0.0.1/tcp/4002/p2p/QmBootstrapNode1"
+    - "/ip4/127.0.0.1/tcp/4003/p2p/QmBootstrapNode2"
+
+# Blockchain Configuration
+blockchain:
+  # Path to store blockchain data
+  data_dir: "./data/blockchain"
+  # Genesis block configuration
+  genesis:
+    # Initial validators for Proof of Authority
+    validators:
+      - "validator1_node_id"
+      - "validator2_node_id"
+      - "validator3_node_id"
+  # Block configuration
+  block:
+    # Maximum number of transactions per block
+    max_transactions: 1000
+    # Block time in seconds (time between blocks)
+    block_time: 10
+    # Maximum block size in bytes
+    max_size: 1048576  # 1MB
+
+# Consensus Configuration (Proof of Authority)
+consensus:
+  # Enable consensus mechanism
+  enabled: true
+  # Round robin configuration
+  round_robin:
+    # Timeout for validator to produce block (seconds)
+    validator_timeout: 30
+    # Number of rounds to wait before considering validator offline
+    max_missed_rounds: 3
+  # Validator configuration
+  validator:
+    # Is this node a validator?
+    is_validator: false
+    # Private key for validator (if is_validator is true)
+    private_key_path: "./keys/validator.key"
+
+# Network Configuration (libp2p)
+network:
+  # Enable network service
+  enabled: true
+  # Discovery configuration
+  discovery:
+    # Enable mDNS discovery
+    mdns: true
+    # Enable DHT discovery
+    dht: true
+    # Discovery interval in seconds
+    interval: 30
+  # Connection limits
+  connection:
+    # Maximum number of connections
+    max_connections: 100
+    # Connection timeout in seconds
+    timeout: 30
+  # Protocol configuration
+  protocols:
+    # Block sync protocol version
+    block_sync: "/peer-vote/block-sync/1.0.0"
+    # Transaction gossip protocol version
+    tx_gossip: "/peer-vote/tx-gossip/1.0.0"
+    # Consensus protocol version
+    consensus: "/peer-vote/consensus/1.0.0"
+
+# Voting Configuration
+voting:
+  # Enable voting service
+  enabled: true
+  # Validation rules
+  validation:
+    # Minimum time between votes from same voter (seconds)
+    min_vote_interval: 60
+    # Maximum election duration (hours)
+    max_election_duration: 168  # 1 week
+    # Minimum election duration (minutes)
+    min_election_duration: 60   # 1 hour
+  # Security settings
+  security:
+    # Require signature verification
+    require_signatures: true
+    # Allow anonymous voting
+    allow_anonymous: false
+
+# API Configuration
+api:
+  # Enable REST API
+  enabled: true
+  # API server configuration
+  server:
+    # Address to bind API server
+    address: "0.0.0.0:8080"
+    # Enable CORS
+    cors: true
+    # API timeout in seconds
+    timeout: 30
+  # Authentication (optional)
+  auth:
+    # Enable authentication
+    enabled: false
+    # JWT secret key
+    jwt_secret: "your-secret-key-here"
+
+# Storage Configuration
+storage:
+  # Storage type: "file", "memory", "leveldb"
+  type: "file"
+  # Storage path (for file-based storage)
+  path: "./data/storage"
+  # Cache configuration
+  cache:
+    # Enable caching
+    enabled: true
+    # Cache size (number of items)
+    size: 1000
+    # Cache TTL in minutes
+    ttl: 60
+
+# Logging Configuration
+logging:
+  # Log level: "debug", "info", "warn", "error"
+  level: "info"
+  # Log format: "json", "text"
+  format: "text"
+  # Log output: "stdout", "stderr", or file path
+  output: "stdout"
+  # Enable structured logging
+  structured: false
+
+# Monitoring Configuration
+monitoring:
+  # Enable metrics collection
+  metrics:
+    enabled: true
+    # Metrics server address
+    address: "0.0.0.0:9090"
+  # Health check configuration
+  health:
+    enabled: true
+    # Health check endpoint
+    endpoint: "/health"
+    # Health check interval in seconds
+    interval: 30
+
+# Security Configuration
+security:
+  # Cryptography settings
+  crypto:
+    # Signature algorithm: "ecdsa", "ed25519"
+    signature_algorithm: "ecdsa"
+    # Hash algorithm: "sha256", "blake2b"
+    hash_algorithm: "sha256"
+  # Key management
+  keys:
+    # Path to store keys
+    key_dir: "./keys"
+    # Key generation settings
+    generation:
+      # Key size for ECDSA (256, 384, 521)
+      ecdsa_curve: "P-256"
+
+# Development Configuration (only for development)
+development:
+  # Enable development mode
+  enabled: false
+  # Enable debug endpoints
+  debug_endpoints: false
+  # Enable profiling
+  profiling: false
+  # Mock external services
+  mock_services: false

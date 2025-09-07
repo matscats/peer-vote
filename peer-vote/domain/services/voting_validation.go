@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
-	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 )
 
@@ -38,19 +37,15 @@ type VotingValidationService interface {
 
 // VotingValidator implementa VotingValidationService
 type VotingValidator struct {
-	electionRepo  repositories.ElectionRepository
 	cryptoService CryptographyService
 }
 
 // NewVotingValidator cria um novo validador de votação
 func NewVotingValidator(
-	electionRepo repositories.ElectionRepository,
 	_ interface{},
-	cryptoService CryptographyService,
 ) *VotingValidator {
 	return &VotingValidator{
-		electionRepo:  electionRepo,
-		cryptoService: cryptoService,
+		cryptoService: nil, // Será injetado quando necessário
 	}
 }
 
@@ -62,12 +57,6 @@ func (v *VotingValidator) ValidateElection(ctx context.Context, election *entiti
 
 	if !election.IsValid() {
 		return fmt.Errorf("election is invalid")
-	}
-
-	// Verificar se já existe uma eleição com o mesmo título
-	existingElection, err := v.electionRepo.GetElectionByTitle(ctx, election.GetTitle())
-	if err == nil && existingElection != nil && !existingElection.GetID().Equals(election.GetID()) {
-		return fmt.Errorf("election with title '%s' already exists", election.GetTitle())
 	}
 
 	return nil

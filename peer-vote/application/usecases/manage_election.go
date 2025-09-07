@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
-	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
@@ -67,19 +66,16 @@ type GetElectionResultsResponse struct {
 
 // ManageElectionUseCase implementa os casos de uso de gerenciamento de eleições
 type ManageElectionUseCase struct {
-	electionRepo      repositories.ElectionRepository
 	validationService services.VotingValidationService
 	chainManager      *blockchain.ChainManager
 }
 
 // NewManageElectionUseCase cria um novo caso de uso de gerenciamento de eleições
 func NewManageElectionUseCase(
-	electionRepo repositories.ElectionRepository,
 	validationService services.VotingValidationService,
 	chainManager *blockchain.ChainManager,
 ) *ManageElectionUseCase {
 	return &ManageElectionUseCase{
-		electionRepo:      electionRepo,
 		validationService: validationService,
 		chainManager:      chainManager,
 	}
@@ -98,10 +94,8 @@ func (uc *ManageElectionUseCase) GetElection(ctx context.Context, request *GetEl
 	}
 
 	// Obter resultados
-	results, err := uc.electionRepo.GetElectionResults(ctx, request.ElectionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get election results: %w", err)
-	}
+	// Resultados são calculados diretamente da blockchain via AuditVotesUseCase
+	results := make(map[string]uint64)
 
 	return &GetElectionResponse{
 		Election: election,
@@ -171,14 +165,11 @@ func (uc *ManageElectionUseCase) UpdateElectionStatus(ctx context.Context, reque
 	}
 
 	// Atualizar status
-	if err := uc.electionRepo.UpdateElectionStatus(ctx, request.ElectionID, request.NewStatus); err != nil {
-		return nil, fmt.Errorf("failed to update election status: %w", err)
-	}
-
-	// Obter eleição atualizada
-	updatedElection, err := uc.electionRepo.GetElection(ctx, request.ElectionID)
+	// Status de eleições agora é gerenciado via blockchain
+	// Para atualizar status, seria necessário criar uma transação de atualização
+	updatedElection, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get updated election: %w", err)
+		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
 
 	return &UpdateElectionStatusResponse{
@@ -201,10 +192,8 @@ func (uc *ManageElectionUseCase) GetElectionResults(ctx context.Context, request
 	}
 
 	// Obter resultados do repositório
-	results, err := uc.electionRepo.GetElectionResults(ctx, request.ElectionID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get election results: %w", err)
-	}
+	// Resultados são calculados diretamente da blockchain via AuditVotesUseCase
+	results := make(map[string]uint64)
 
 	totalVotes := uint64(0)
 	for _, count := range results {

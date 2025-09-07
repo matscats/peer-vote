@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
-	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
@@ -35,7 +34,6 @@ type SubmitVoteResponse struct {
 
 // SubmitVoteUseCase implementa o caso de uso de submissão de votos
 type SubmitVoteUseCase struct {
-	electionRepo      repositories.ElectionRepository
 	chainManager      *blockchain.ChainManager
 	poaEngine         *consensus.PoAEngine
 	cryptoService     services.CryptographyService
@@ -44,14 +42,12 @@ type SubmitVoteUseCase struct {
 
 // NewSubmitVoteUseCase cria um novo caso de uso de submissão de votos
 func NewSubmitVoteUseCase(
-	electionRepo repositories.ElectionRepository,
 	chainManager *blockchain.ChainManager,
 	poaEngine *consensus.PoAEngine,
 	cryptoService services.CryptographyService,
 	validationService services.VotingValidationService,
 ) *SubmitVoteUseCase {
 	return &SubmitVoteUseCase{
-		electionRepo:      electionRepo,
 		chainManager:      chainManager,
 		poaEngine:         poaEngine,
 		cryptoService:     cryptoService,

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
-	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
@@ -73,7 +72,6 @@ type CountVotesResponse struct {
 
 // AuditVotesUseCase implementa os casos de uso de auditoria e contagem de votos
 type AuditVotesUseCase struct {
-	electionRepo      repositories.ElectionRepository
 	chainManager      *blockchain.ChainManager
 	cryptoService     services.CryptographyService
 	validationService services.VotingValidationService
@@ -81,13 +79,11 @@ type AuditVotesUseCase struct {
 
 // NewAuditVotesUseCase cria um novo caso de uso de auditoria de votos
 func NewAuditVotesUseCase(
-	electionRepo repositories.ElectionRepository,
 	chainManager *blockchain.ChainManager,
 	cryptoService services.CryptographyService,
 	validationService services.VotingValidationService,
 ) *AuditVotesUseCase {
 	return &AuditVotesUseCase{
-		electionRepo:      electionRepo,
 		chainManager:      chainManager,
 		cryptoService:     cryptoService,
 		validationService: validationService,

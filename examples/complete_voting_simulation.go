@@ -31,7 +31,6 @@ type Node struct {
 	PoAEngine        *consensus.PoAEngine
 	
 	// Repositórios
-	ElectionRepo     *persistence.MemoryElectionRepository
 	BlockchainRepo   *persistence.MemoryBlockchainRepository
 	KeyRepo          *persistence.MemoryKeyRepository
 	
@@ -160,7 +159,6 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		
 		// Configurar repositórios
 		node.BlockchainRepo = persistence.NewMemoryBlockchainRepository(node.CryptoService).(*persistence.MemoryBlockchainRepository)
-		node.ElectionRepo = persistence.NewMemoryElectionRepository()
 		node.KeyRepo = persistence.NewMemoryKeyRepository()
 		
 		// Armazenar chaves do nó
@@ -184,15 +182,10 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		)
 		
 		// Configurar serviços de validação
-		votingValidator := services.NewVotingValidator(
-			node.ElectionRepo,
-			nil, // Parâmetro não utilizado
-			node.CryptoService,
-		)
+		votingValidator := services.NewVotingValidator(nil)
 		
 		// Configurar casos de uso
 		node.CreateElectionUC = usecases.NewCreateElectionUseCase(
-			node.ElectionRepo,
 			node.CryptoService,
 			votingValidator,
 			node.ChainManager,
@@ -200,7 +193,6 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		)
 		
 		node.SubmitVoteUC = usecases.NewSubmitVoteUseCase(
-			node.ElectionRepo,
 			node.ChainManager,
 			node.PoAEngine,
 			node.CryptoService,
@@ -208,14 +200,12 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		)
 		
 		node.AuditVotesUC = usecases.NewAuditVotesUseCase(
-			node.ElectionRepo,
 			node.ChainManager,
 			node.CryptoService,
 			votingValidator,
 		)
 		
 		node.ManageElectionUC = usecases.NewManageElectionUseCase(
-			node.ElectionRepo,
 			votingValidator,
 			node.ChainManager,
 		)

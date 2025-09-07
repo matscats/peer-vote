@@ -3,12 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log"
 
 	"github.com/matscats/peer-vote/peer-vote/application/usecases"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/crypto"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/persistence"
 	"github.com/spf13/cobra"
 )
 
@@ -53,11 +50,9 @@ func runStatusCommand(cmd *cobra.Command, args []string) {
 	fmt.Println("==============================")
 
 	// Inicializar serviços
-	cryptoService := crypto.NewECDSAService()
-	electionRepo := persistence.NewMemoryElectionRepository()
-	validationService := services.NewVotingValidator(electionRepo, nil, cryptoService)
+	validationService := services.NewVotingValidator(nil)
 
-	manageElectionUseCase := usecases.NewManageElectionUseCase(electionRepo, validationService, nil)
+	manageElectionUseCase := usecases.NewManageElectionUseCase(validationService, nil)
 
 	// Mostrar status das eleições (padrão ou se solicitado)
 	if !showNetwork || showElections || showAll {
@@ -76,7 +71,7 @@ func runStatusCommand(cmd *cobra.Command, args []string) {
 
 	// Mostrar estatísticas gerais
 	if !showElections && !showNetwork || showAll {
-		showGeneralStats(ctx, electionRepo)
+		showGeneralStats(ctx)
 	}
 }
 
@@ -150,26 +145,20 @@ func showBlockchainStatus() {
 	fmt.Println("✅ Cadeia válida: N/A")
 }
 
-func showGeneralStats(ctx context.Context, electionRepo *persistence.MemoryElectionRepository) {
+func showGeneralStats(ctx context.Context) {
 	fmt.Println("\n📈 Estatísticas Gerais")
 	fmt.Println("---------------------")
 
-	// Contar eleições
-	elections, err := electionRepo.ListElections(ctx)
-	if err != nil {
-		log.Printf("Erro ao contar eleições: %v", err)
-	} else {
-		fmt.Printf("🗳️  Total de eleições: %d\n", len(elections))
-	}
-
+	// Estatísticas agora são obtidas da blockchain
+	fmt.Printf("🗳️  Total de eleições: N/A (consulte a blockchain)\n")
 	fmt.Printf("📊 Total de votos: N/A (consulte a blockchain)\n")
 	fmt.Printf("🎭 Votos anônimos: N/A (consulte a blockchain)\n")
 
 	// Status dos serviços
 	fmt.Println("\n🔧 Serviços")
 	fmt.Println("-----------")
-	fmt.Println("✅ Repositório de eleições: Online")
-	fmt.Println("✅ Repositório de votos: Online")
+	fmt.Println("✅ Blockchain: Online")
+	fmt.Println("✅ Consenso PoA: Online")
 	fmt.Println("✅ Serviço de criptografia: Online")
 	fmt.Println("✅ Serviço de validação: Online")
 	fmt.Println("⚠️  Rede P2P: Offline")

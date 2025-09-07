@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
-	"github.com/matscats/peer-vote/peer-vote/domain/repositories"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
@@ -37,7 +36,6 @@ type CreateElectionResponse struct {
 
 // CreateElectionUseCase implementa o caso de uso de criação de eleições
 type CreateElectionUseCase struct {
-	electionRepo      repositories.ElectionRepository
 	cryptoService     services.CryptographyService
 	validationService services.VotingValidationService
 	chainManager      *blockchain.ChainManager
@@ -46,14 +44,12 @@ type CreateElectionUseCase struct {
 
 // NewCreateElectionUseCase cria um novo caso de uso de criação de eleições
 func NewCreateElectionUseCase(
-	electionRepo repositories.ElectionRepository,
 	cryptoService services.CryptographyService,
 	validationService services.VotingValidationService,
 	chainManager *blockchain.ChainManager,
 	poaEngine *consensus.PoAEngine,
 ) *CreateElectionUseCase {
 	return &CreateElectionUseCase{
-		electionRepo:      electionRepo,
 		cryptoService:     cryptoService,
 		validationService: validationService,
 		chainManager:      chainManager,
@@ -116,10 +112,7 @@ func (uc *CreateElectionUseCase) Execute(ctx context.Context, request *CreateEle
 		fmt.Printf("Warning: election transaction confirmation timeout: %v\n", err)
 	}
 
-	// Manter compatibilidade temporária com repositório
-	if err := uc.electionRepo.CreateElection(ctx, election); err != nil {
-		fmt.Printf("Warning: failed to store election in repository: %v\n", err)
-	}
+	// Eleição agora é criada apenas na blockchain
 
 	return &CreateElectionResponse{
 		Election:        election,

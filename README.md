@@ -1,300 +1,271 @@
-# Peer-Vote 🗳️
+# Peer-Vote
 
-Um sistema de votação descentralizado baseado em blockchain com algoritmo de consenso Proof of Authority (PoA) e comunicação P2P via libp2p.
+Sistema de votação descentralizado baseado em blockchain com consenso Proof of Authority (PoA).
 
 ## 🎯 Visão Geral
 
-O **Peer-Vote** é um sistema de votação transparente e descentralizado que garante a integridade dos votos através de tecnologia blockchain. Cada nó da rede pode atuar como eleitor, e o sistema utiliza Proof of Authority com seleção Round Robin para validação de blocos.
+O Peer-Vote é um sistema de votação eletrônica descentralizado que utiliza tecnologia blockchain para garantir transparência, segurança e auditabilidade em eleições. O sistema implementa consenso Proof of Authority (PoA) e comunicação peer-to-peer (P2P) para criar uma rede distribuída de nós validadores.
 
 ### Características Principais
 
-- 🔐 **Segurança**: Criptografia ECDSA e Merkle Trees
-- 🌐 **Descentralização**: Rede P2P com libp2p
-- ⚡ **Consenso Eficiente**: Proof of Authority com Round Robin
-- 🔍 **Transparência**: Blockchain auditável publicamente
-- 🏗️ **Arquitetura Limpa**: Código modular seguindo princípios SOLID
-- 📊 **API REST**: Interface completa para integração
+- **🔗 Blockchain**: Armazenamento imutável de votos e eleições
+- **🏛️ Consenso PoA**: Validadores autorizados com rotação Round Robin
+- **🌐 Rede P2P**: Comunicação descentralizada com libp2p
+- **🔐 Criptografia**: Assinaturas digitais ECDSA e hashing SHA-256
+- **🗳️ Votação Anônima**: Suporte a votos anônimos com auditoria
+- **📊 Auditoria Completa**: Verificação de integridade e contagem
+- **🔄 Sincronização**: Sincronização automática entre nós
+- **📱 APIs**: REST API e CLI para integração
 
-## 🏛️ Arquitetura
+## 🏗️ Arquitetura
 
-O projeto segue os princípios da **Clean Architecture**, organizando o código em camadas bem definidas:
+O sistema segue os princípios da **Arquitetura Hexagonal (Clean Architecture)**, organizando o código em camadas bem definidas:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Interfaces Layer                        │
-│                   (API REST, CLI)                          │
-├─────────────────────────────────────────────────────────────┤
-│                   Application Layer                        │
-│              (Use Cases, App Services)                     │
-├─────────────────────────────────────────────────────────────┤
-│                     Domain Layer                           │
-│           (Entities, Value Objects, Interfaces)            │
-├─────────────────────────────────────────────────────────────┤
-│                 Infrastructure Layer                       │
-│        (Blockchain, Consensus, Network, Persistence)       │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    Infrastructure                        │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│  │     CLI     │ │  REST API   │ │      P2P Network    │ │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                     Application                         │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│  │  Use Cases  │ │  Consensus  │ │     Blockchain      │ │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                       Domain                            │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐ │
+│  │  Entities   │ │   Services  │ │   Value Objects     │ │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
 ```
-
-### Componentes Técnicos
-
-- **Blockchain**: Implementação com Merkle Tree para eficiência
-- **Consenso**: Proof of Authority com seleção Round Robin
-- **Rede P2P**: Comunicação via libp2p
-- **Criptografia**: ECDSA para assinaturas digitais
-- **Persistência**: Armazenamento flexível (arquivo/memória)
 
 ## 🚀 Início Rápido
 
 ### Pré-requisitos
 
 - Go 1.21 ou superior
-- Git
+- Make (para comandos de build)
 
 ### Instalação
 
 ```bash
-# Clone o repositório
+# Clonar repositório
 git clone https://github.com/matscats/peer-vote.git
 cd peer-vote
 
-# Baixe as dependências
-make deps
+# Instalar dependências
+go mod download
 
-# Configure o ambiente de desenvolvimento
-make setup-dev
-
-# Compile o projeto
+# Compilar
 make build
 ```
 
-### Executando um Nó
+### Executar Nó
 
 ```bash
-# Executar com configuração padrão
-make run
+# Iniciar nó validador
+./build/peer-vote start --validator --verbose
 
-# Executar em modo desenvolvimento
-make run-dev
+# Ou usar make
+make cli-start
+```
 
-# Executar como validador
-make start-validator
+### Exemplo de Votação
 
-# Executar como peer
-make start-peer
+```bash
+# Executar simulação completa
+make example-complete
+
+# Ou executar exemplo específico
+go run ./examples/complete_voting_simulation.go
 ```
 
 ## 📖 Documentação
+
+A documentação completa está organizada na pasta `docs/`:
+
+### Arquitetura e Design
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Visão geral da arquitetura do sistema
+- **[IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md)** - Guia de implementação detalhado
+
+### Módulos do Sistema
+- **[BLOCKCHAIN.md](docs/BLOCKCHAIN.md)** - Módulo de blockchain e gerenciamento de blocos
+- **[CONSENSUS.md](docs/CONSENSUS.md)** - Sistema de consenso Proof of Authority
+- **[P2P_NETWORK.md](docs/P2P_NETWORK.md)** - Rede peer-to-peer e comunicação
+- **[VOTING_SYSTEM.md](docs/VOTING_SYSTEM.md)** - Sistema de votação e validação
+
+### APIs e Integração
+- **[API_REFERENCE.md](docs/API_REFERENCE.md)** - Referência completa da REST API e CLI
+- **[USAGE_EXAMPLES.md](docs/USAGE_EXAMPLES.md)** - Exemplos práticos de uso
+
+## 🛠️ Desenvolvimento
+
+### Comandos Make
+
+```bash
+# Build
+make build                 # Compilar aplicação
+make build-all             # Compilar para todas as plataformas
+
+# Testes
+make test                  # Executar testes
+make test-coverage         # Testes com cobertura
+
+# Exemplos
+make example-blockchain    # Exemplo de blockchain
+make example-consensus     # Exemplo de consenso
+make example-p2p          # Exemplo de P2P
+make example-voting       # Exemplo de votação
+make example-complete     # Simulação completa
+
+# CLI
+make cli-start            # Iniciar nó
+make cli-status           # Status do nó
+make cli-help             # Ajuda da CLI
+
+# Desenvolvimento
+make clean                # Limpar builds
+make deps                 # Instalar dependências
+```
 
 ### Estrutura do Projeto
 
 ```
 peer-vote/
-├── peer-vote/              # Código fonte principal
-│   ├── domain/            # Camada de domínio
-│   ├── application/       # Camada de aplicação
-│   ├── infrastructure/    # Camada de infraestrutura
-│   └── interfaces/        # Camada de interfaces
-├── cmd/                   # Entry points da aplicação
-├── configs/               # Arquivos de configuração
-├── test/                  # Testes (unit, integration, e2e)
-├── docs/                  # Documentação
-└── scripts/               # Scripts utilitários
+├── cmd/                  # Pontos de entrada da aplicação
+├── configs/              # Arquivos de configuração
+├── docs/                 # Documentação
+├── examples/             # Exemplos de uso
+├── peer-vote/            # Código fonte principal
+│   ├── application/      # Casos de uso
+│   ├── domain/          # Entidades e regras de negócio
+│   └── infrastructure/   # Implementações de infraestrutura
+├── build/               # Binários compilados
+├── go.mod              # Dependências Go
+├── Makefile            # Comandos de build
+└── README.md           # Este arquivo
 ```
 
-### Guias
+## 🔧 Configuração
 
-- [📋 Guia de Implementação](IMPLEMENTATION_GUIDE.md) - Roadmap detalhado
-- [🏗️ Arquitetura](peer-vote/README.md) - Detalhes da arquitetura
-- [⚙️ Configuração](configs/config.yaml) - Opções de configuração
-- [🧪 Testes](test/README.md) - Como executar testes
+### Arquivo de Configuração
 
-## 🛠️ Desenvolvimento
+Crie um arquivo `configs/config.yaml`:
 
-### Comandos Úteis
+```yaml
+# Configuração do nó
+node:
+  is_validator: true
+  private_key_path: "./keys/node.key"
+
+# API REST
+api:
+  host: "0.0.0.0"
+  port: 8080
+
+# Rede P2P
+p2p:
+  listen_addresses:
+    - "/ip4/0.0.0.0/tcp/9000"
+  max_connections: 50
+  enable_mdns: true
+  enable_dht: true
+  namespace: "peer-vote"
+
+# Blockchain
+blockchain:
+  max_transactions_per_block: 1000
+  block_interval: "10s"
+
+# Consenso
+consensus:
+  algorithm: "poa"
+  validator_timeout: "30s"
+```
+
+### Variáveis de Ambiente
 
 ```bash
-# Executar testes
-make test
-
-# Executar linter
-make lint
-
-# Formatar código
-make fmt
-
-# Executar todas as verificações
-make check
-
-# Gerar relatório de cobertura
-make coverage
-
-# Build para múltiplas plataformas
-make build-all
+export PEER_VOTE_CONFIG_PATH="./configs/config.yaml"
+export PEER_VOTE_API_PORT="8080"
+export PEER_VOTE_P2P_PORT="9000"
+export PEER_VOTE_IS_VALIDATOR="true"
 ```
 
-### Fluxo de Desenvolvimento
+## 🔐 Segurança
 
-1. **Fork** o repositório
-2. **Crie** uma branch para sua feature (`git checkout -b feature/nova-feature`)
-3. **Implemente** seguindo os princípios de Clean Code
-4. **Teste** sua implementação (`make test`)
-5. **Verifique** a qualidade do código (`make check`)
-6. **Commit** suas mudanças (`git commit -am 'Add nova feature'`)
-7. **Push** para a branch (`git push origin feature/nova-feature`)
-8. **Abra** um Pull Request
+### Criptografia
+- **ECDSA P-256**: Assinaturas digitais
+- **SHA-256**: Hashing criptográfico
+- **Noise Protocol**: Comunicação P2P segura
 
-## 🔧 API REST
+### Consenso
+- **Proof of Authority**: Validadores autorizados
+- **Round Robin**: Seleção justa de validadores
+- **Penalidades**: Sistema de punições para validadores maliciosos
 
-### Endpoints Principais
-
-```bash
-# Status do nó
-GET /health
-
-# Listar eleições
-GET /api/v1/elections
-
-# Criar eleição
-POST /api/v1/elections
-
-# Submeter voto
-POST /api/v1/votes
-
-# Consultar blockchain
-GET /api/v1/blocks
-
-# Status da rede
-GET /api/v1/network/status
-```
-
-### Exemplos de Uso
-
-```bash
-# Criar uma eleição
-curl -X POST http://localhost:8080/api/v1/elections \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "Eleição Teste",
-    "description": "Uma eleição de teste",
-    "candidates": [
-      {"id": "1", "name": "Candidato A"},
-      {"id": "2", "name": "Candidato B"}
-    ],
-    "start_time": "2024-01-01T00:00:00Z",
-    "end_time": "2024-12-31T23:59:59Z"
-  }'
-
-# Submeter um voto
-curl -X POST http://localhost:8080/api/v1/votes \
-  -H "Content-Type: application/json" \
-  -d '{
-    "election_id": "hash_da_eleicao",
-    "candidate_id": "1"
-  }'
-```
-
-## 🧪 Testes
-
-O projeto inclui uma suíte completa de testes:
-
-```bash
-# Testes unitários
-make test-unit
-
-# Testes de integração
-make test-integration
-
-# Testes end-to-end
-make test-e2e
-
-# Todos os testes
-make test
-
-# Benchmarks
-make benchmark
-```
+### Votação
+- **Assinaturas Digitais**: Autenticação de votos
+- **Prevenção de Voto Duplo**: Verificação de histórico
+- **Votos Anônimos**: Privacidade com auditabilidade
+- **Auditoria Completa**: Verificação de integridade
 
 ## 📊 Monitoramento
 
-### Métricas
+### Métricas Disponíveis
+- Status da rede P2P
+- Performance do consenso
+- Altura da blockchain
+- Estatísticas de votação
+- Conectividade de peers
 
-- Endpoint de métricas: `http://localhost:9090/metrics`
-- Health check: `http://localhost:8080/health`
-- Status da rede: `http://localhost:8080/api/v1/network/status`
-
-### Logs
-
-Os logs são estruturados e configuráveis via arquivo de configuração:
-
-```yaml
-logging:
-  level: "info"
-  format: "json"
-  output: "stdout"
-```
-
-## 🔒 Segurança
-
-### Criptografia
-
-- **Assinaturas**: ECDSA com curva P-256
-- **Hashes**: SHA-256
-- **Merkle Trees**: Para eficiência na verificação
-
-### Validação
-
-- Verificação de assinaturas digitais
-- Validação de integridade da blockchain
-- Prevenção de double-spending
-- Timeout de validadores
-
-## 🐳 Docker
-
+### APIs de Status
 ```bash
-# Build da imagem
-make docker-build
+# Status do nó
+curl http://localhost:8080/api/node/status
 
-# Executar container
-make docker-run
+# Status da blockchain
+curl http://localhost:8080/api/blockchain/status
 
-# Ou usando docker-compose
-docker-compose up -d
+# Peers conectados
+curl http://localhost:8080/api/node/peers
 ```
 
-## 📈 Roadmap
+## 🤝 Contribuição
 
-- [x] **Fase 1**: Estruturas base e interfaces
-- [ ] **Fase 2**: Implementação da blockchain
-- [ ] **Fase 3**: Algoritmo de consenso PoA
-- [ ] **Fase 4**: Rede P2P com libp2p
-- [ ] **Fase 5**: Sistema de votação
-- [ ] **Fase 6**: Interface e monitoramento
+1. Fork o projeto
+2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
+3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
+4. Push para a branch (`git push origin feature/AmazingFeature`)
+5. Abra um Pull Request
 
-Veja o [Guia de Implementação](IMPLEMENTATION_GUIDE.md) para detalhes completos.
+### Diretrizes de Código
 
-## 🤝 Contribuindo
-
-Contribuições são bem-vindas! Por favor:
-
-1. Leia o [Guia de Contribuição](CONTRIBUTING.md)
-2. Siga os princípios de Clean Code e SOLID
-3. Mantenha cobertura de testes > 80%
-4. Documente suas mudanças
+- Siga os princípios de Clean Code
+- Mantenha a Arquitetura Hexagonal
+- Implemente testes para novas funcionalidades
+- Documente APIs e interfaces públicas
 
 ## 📄 Licença
 
-Este projeto está licenciado sob a [MIT License](LICENSE).
-
-## 👥 Autores
-
-- **Mateus** - *Desenvolvimento inicial* - [@matscats](https://github.com/matscats)
+Este projeto está licenciado sob a Licença MIT - veja o arquivo [LICENSE](LICENSE) para detalhes.
 
 ## 🙏 Agradecimentos
 
-- Comunidade Go pela excelente linguagem
-- Projeto libp2p pela infraestrutura P2P
-- Princípios de Clean Architecture por Robert C. Martin
+- [libp2p](https://libp2p.io/) - Biblioteca de rede P2P
+- [Go](https://golang.org/) - Linguagem de programação
+- [Cobra](https://github.com/spf13/cobra) - Framework CLI
+- [Gorilla Mux](https://github.com/gorilla/mux) - Router HTTP
+
+## 📞 Suporte
+
+- **Documentação**: [docs/](docs/)
+- **Exemplos**: [examples/](examples/)
+- **Issues**: [GitHub Issues](https://github.com/matscats/peer-vote/issues)
 
 ---
 
-**Peer-Vote** - Democratizando a votação através da tecnologia blockchain 🚀
+**Peer-Vote** - Sistema de Votação Descentralizado 🗳️

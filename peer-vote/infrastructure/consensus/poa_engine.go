@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 )
 
 // PoAEngine implementa o algoritmo de consenso Proof of Authority
+// Segue os princípios SOLID: SRP (responsabilidade única de consenso),
+// DIP (depende de abstrações NetworkService, não implementações concretas)
 type PoAEngine struct {
 	// Componentes principais
 	validatorManager *ValidatorManager
@@ -23,15 +26,14 @@ type PoAEngine struct {
 	cryptoService    services.CryptographyService
 	keyRepository    crypto.KeyRepository // Repositório de chaves para validação
 	
+	// Comunicação P2P real (DIP - depende da abstração)
+	networkService   services.NetworkService
+	
 	// Estado do consenso
 	isRunning        bool
 	currentValidator valueobjects.NodeID
 	myNodeID         valueobjects.NodeID
 	myPrivateKey     *services.PrivateKey
-	
-	// Sistema de peers para sincronização
-	peers            []*PoAEngine
-	peersMutex       sync.RWMutex
 	
 	// Pool de transações pendentes
 	pendingTxs       []*entities.Transaction
@@ -55,20 +57,23 @@ type PoAEngine struct {
 }
 
 // NewPoAEngine cria um novo motor de consenso PoA
+// Aplica DIP: recebe NetworkService como abstração, não implementação concreta
 func NewPoAEngine(
 	validatorManager *ValidatorManager,
 	chainManager *blockchain.ChainManager,
 	cryptoService services.CryptographyService,
 	myNodeID valueobjects.NodeID,
 	myPrivateKey *services.PrivateKey,
+	networkService services.NetworkService, // DIP: depende da abstração
 ) *PoAEngine {
 	roundRobin := NewRoundRobinScheduler(validatorManager)
 	
-	return &PoAEngine{
+	engine := &PoAEngine{
 		validatorManager: validatorManager,
 		roundRobin:       roundRobin,
 		chainManager:     chainManager,
 		cryptoService:    cryptoService,
+		networkService:   networkService,
 		keyRepository:    nil, // Será definido depois
 		myNodeID:         myNodeID,
 		myPrivateKey:     myPrivateKey,
@@ -80,6 +85,13 @@ func NewPoAEngine(
 		newTxChan:        make(chan *entities.Transaction, 1000),
 		stopChan:         make(chan struct{}),
 	}
+	
+	// Configurar handlers P2P se o serviço estiver disponível
+	if networkService != nil {
+		engine.setupNetworkHandlers()
+	}
+	
+	return engine
 }
 
 // SetKeyRepository define o repositório de chaves para validação
@@ -168,8 +180,8 @@ func (poa *PoAEngine) ProposeBlock(ctx context.Context, block *entities.Block) e
 		return fmt.Errorf("failed to add block to chain: %w", err)
 	}
 
-	// Propagar bloco para todos os peers automaticamente
-	poa.propagateBlockToPeers(ctx, block)
+	// Propagar bloco para todos os peers via P2P real
+	poa.broadcastBlock(ctx, block)
 
 	// Notificar produção de bloco
 	if err := poa.roundRobin.NotifyBlockProduced(ctx, poa.myNodeID); err != nil {
@@ -454,8 +466,8 @@ func (poa *PoAEngine) tryProduceBlock(ctx context.Context) {
 		return
 	}
 
-	// Propagar bloco para todos os peers automaticamente
-	poa.propagateBlockToPeers(ctx, block)
+	// Propagar bloco para todos os peers via P2P real
+	poa.broadcastBlock(ctx, block)
 
 	// Remover transações processadas do pool
 	poa.pendingTxs = poa.pendingTxs[txCount:]
@@ -586,88 +598,105 @@ func (poa *PoAEngine) serializeBlockForValidation(ctx context.Context, block *en
 	return []byte(data), nil
 }
 
-// AddPeer adiciona um peer para sincronização de blockchain
-func (poa *PoAEngine) AddPeer(peer *PoAEngine) {
-	poa.peersMutex.Lock()
-	defer poa.peersMutex.Unlock()
-	
-	// Evitar adicionar o próprio nó como peer
-	if peer.myNodeID.Equals(poa.myNodeID) {
+// setupNetworkHandlers configura os handlers para comunicação P2P
+// Aplica SRP: método focado apenas em configurar handlers de rede
+func (poa *PoAEngine) setupNetworkHandlers() {
+	if poa.networkService == nil {
 		return
 	}
 	
-	// Verificar se o peer já existe
-	for _, existingPeer := range poa.peers {
-		if existingPeer.myNodeID.Equals(peer.myNodeID) {
-			return
+	// Configurar handler para blocos recebidos
+	poa.networkService.RegisterBlockHandler(poa.handleIncomingBlock)
+	
+	// Configurar handler para transações recebidas
+	poa.networkService.RegisterTransactionHandler(poa.handleIncomingTransaction)
+}
+
+// broadcastBlock propaga um bloco via P2P real para toda a rede
+// Aplica SRP: responsabilidade única de propagar blocos
+func (poa *PoAEngine) broadcastBlock(ctx context.Context, block *entities.Block) {
+	if poa.networkService == nil {
+		log.Printf("Warning: NetworkService not available, block not broadcasted")
+		return
+	}
+	
+	// Usar P2P real para propagar o bloco
+	if err := poa.networkService.BroadcastBlock(ctx, block); err != nil {
+		log.Printf("Error broadcasting block %d: %v", block.GetIndex(), err)
+		if poa.onConsensusError != nil {
+			poa.onConsensusError(fmt.Errorf("failed to broadcast block: %w", err))
 		}
 	}
-	
-	poa.peers = append(poa.peers, peer)
 }
 
-// propagateBlockToPeers propaga um bloco para todos os peers
-func (poa *PoAEngine) propagateBlockToPeers(ctx context.Context, block *entities.Block) {
-	poa.peersMutex.RLock()
-	defer poa.peersMutex.RUnlock()
-	
-	for _, peer := range poa.peers {
-		go func(p *PoAEngine) {
-			// Verificar se o peer precisa deste bloco
-			peerHeight, err := p.chainManager.GetChainHeight(ctx)
-			if err != nil {
-				return
-			}
-			
-			// Se o peer tem altura menor, adicionar o bloco
-			if peerHeight < block.GetIndex() {
-				if err := p.chainManager.AddBlock(ctx, block); err != nil {
-					// Log do erro mas não falha - pode ser bloco duplicado
-					return
-				}
-			}
-		}(peer)
-	}
-}
-
-// SyncWithPeers sincroniza a blockchain com os peers (método público)
+// SyncWithPeers sincroniza a blockchain com peers via P2P real
+// Aplica SRP: responsabilidade única de sincronização
 func (poa *PoAEngine) SyncWithPeers(ctx context.Context) error {
-	poa.peersMutex.RLock()
-	defer poa.peersMutex.RUnlock()
-	
-	myHeight, err := poa.chainManager.GetChainHeight(ctx)
-	if err != nil {
-		return err
+	if poa.networkService == nil {
+		return fmt.Errorf("network service not available for synchronization")
 	}
 	
-	// Encontrar o peer com maior altura
-	var bestPeer *PoAEngine
-	var maxHeight uint64 = myHeight
-	
-	for _, peer := range poa.peers {
-		peerHeight, err := peer.chainManager.GetChainHeight(ctx)
-		if err != nil {
-			continue
-		}
-		
-		if peerHeight > maxHeight {
-			maxHeight = peerHeight
-			bestPeer = peer
-		}
+	// Usar o serviço P2P real para sincronização
+	if err := poa.networkService.SyncBlockchain(ctx); err != nil {
+		return fmt.Errorf("failed to sync blockchain via P2P: %w", err)
 	}
 	
-	// Se encontrou um peer com blockchain maior, sincronizar
-	if bestPeer != nil && maxHeight > myHeight {
-		for blockIndex := myHeight + 1; blockIndex <= maxHeight; blockIndex++ {
-			block, err := bestPeer.chainManager.GetBlockByIndex(ctx, blockIndex)
-			if err != nil {
-				continue
-			}
-			
-			if err := poa.chainManager.AddBlock(ctx, block); err != nil {
-				return fmt.Errorf("failed to sync block %d: %w", blockIndex, err)
-			}
-		}
+	return nil
+}
+
+// handleIncomingBlock processa blocos recebidos via P2P
+// Aplica SRP: responsabilidade única de processar blocos recebidos
+func (poa *PoAEngine) handleIncomingBlock(ctx context.Context, block *entities.Block, fromPeer valueobjects.NodeID) error {
+	if block == nil {
+		return fmt.Errorf("received nil block from peer %s", fromPeer.String())
+	}
+	
+	// Validar o bloco recebido
+	if err := poa.ValidateBlock(ctx, block); err != nil {
+		log.Printf("Invalid block received from peer %s: %v", fromPeer.String(), err)
+		return fmt.Errorf("invalid block from peer: %w", err)
+	}
+	
+	// Tentar adicionar o bloco à cadeia
+	if err := poa.chainManager.AddBlock(ctx, block); err != nil {
+		// Bloco pode já existir ou ser inválido - não é erro crítico
+		log.Printf("Could not add block %d from peer %s: %v", block.GetIndex(), fromPeer.String(), err)
+		return nil
+	}
+	
+	log.Printf("Successfully added block %d from peer %s via P2P", block.GetIndex(), fromPeer.String())
+	return nil
+}
+
+// handleIncomingTransaction processa transações recebidas via P2P
+// Aplica SRP: responsabilidade única de processar transações recebidas
+func (poa *PoAEngine) handleIncomingTransaction(ctx context.Context, tx *entities.Transaction, fromPeer valueobjects.NodeID) error {
+	if tx == nil {
+		return fmt.Errorf("received nil transaction from peer %s", fromPeer.String())
+	}
+	
+	// Adicionar transação ao pool se válida
+	if err := poa.AddTransaction(ctx, tx); err != nil {
+		log.Printf("Could not add transaction %s from peer %s: %v", tx.GetID().String(), fromPeer.String(), err)
+		return nil // Não é erro crítico
+	}
+	
+	log.Printf("Successfully added transaction %s from peer %s via P2P", tx.GetID().String(), fromPeer.String())
+	return nil
+}
+
+// BroadcastTransaction propaga uma transação via P2P real
+// Aplica SRP: responsabilidade única de propagar transações
+func (poa *PoAEngine) BroadcastTransaction(ctx context.Context, tx *entities.Transaction) error {
+	if poa.networkService == nil {
+		log.Printf("Warning: NetworkService not available, transaction not broadcasted")
+		return fmt.Errorf("network service not available")
+	}
+	
+	// Usar P2P real para propagar a transação
+	if err := poa.networkService.BroadcastTransaction(ctx, tx); err != nil {
+		log.Printf("Error broadcasting transaction %s: %v", tx.GetID().String(), err)
+		return fmt.Errorf("failed to broadcast transaction: %w", err)
 	}
 	
 	return nil

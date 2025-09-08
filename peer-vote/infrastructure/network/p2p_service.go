@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
@@ -103,11 +104,25 @@ func NewP2PService(
 		Interval:   30 * time.Second, // Descoberta a cada 30 segundos
 	}
 	
-	// Converter bootstrap peers
+	// Converter bootstrap peers (CORREÇÃO CRÍTICA)
 	var bootstrapPeers []peer.AddrInfo
 	for _, addr := range config.BootstrapPeers {
-		// Implementação simplificada - em produção parsearia os endereços
-		_ = addr
+		// Parse do multiaddr para peer.AddrInfo
+		maddr, err := multiaddr.NewMultiaddr(addr)
+		if err != nil {
+			continue // Pular endereços inválidos
+		}
+		
+		// Extrair peer ID do multiaddr (se disponível) ou usar endereço sem ID
+		addrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+		if err != nil {
+			// Se não tem peer ID, criar um AddrInfo apenas com endereço
+			addrInfo = &peer.AddrInfo{
+				Addrs: []multiaddr.Multiaddr{maddr},
+			}
+		}
+		
+		bootstrapPeers = append(bootstrapPeers, *addrInfo)
 	}
 	discoveryConfig.BootstrapPeers = bootstrapPeers
 	
@@ -385,8 +400,8 @@ func (p2p *P2PService) GetConnectedPeers() []peer.ID {
 }
 
 // GetPeerCount retorna número de peers conectados
-func (p2p *P2PService) GetPeerCount() int {
-	return p2p.host.GetPeerCount()
+func (p2p *P2PService) GetPeerCount() (int, error) {
+	return p2p.host.GetPeerCount(), nil
 }
 
 // GetNodeID retorna o ID deste nó
@@ -405,7 +420,7 @@ func (p2p *P2PService) GetMultiAddresses() []string {
 }
 
 // GetStats retorna estatísticas do P2P
-func (p2p *P2PService) GetStats() *P2PStats {
+func (p2p *P2PService) GetStats(ctx context.Context) (*P2PStats, error) {
 	p2p.mu.RLock()
 	defer p2p.mu.RUnlock()
 	
@@ -414,21 +429,51 @@ func (p2p *P2PService) GetStats() *P2PStats {
 	stats.ConnectedPeers = p2p.host.GetPeerCount()
 	stats.DiscoveredPeers = p2p.discovery.GetPeerCount()
 	
-	return &stats
+	return &stats, nil
 }
 
-// GetNetworkStatus retorna status completo da rede
-func (p2p *P2PService) GetNetworkStatus() *services.NetworkStatus {
-	stats := p2p.GetStats()
-	
-	return &services.NetworkStatus{
-		IsRunning:      p2p.isRunning,
-		NodeID:         p2p.nodeID,
-		PeerCount:      stats.ConnectedPeers,
-		ListenAddrs:    p2p.GetListenAddresses(),
-		LastSync:       valueobjects.NewTimestamp(stats.LastSyncTime),
-		SyncInProgress: p2p.syncService.IsSyncing(),
+// IsRunning verifica se o serviço está rodando
+func (p2p *P2PService) IsRunning() bool {
+	p2p.mu.RLock()
+	defer p2p.mu.RUnlock()
+	return p2p.isRunning
+}
+
+// DiscoverPeers inicia descoberta de peers
+func (p2p *P2PService) DiscoverPeers(ctx context.Context) error {
+	if p2p.discovery == nil {
+		return fmt.Errorf("discovery service not available")
 	}
+	
+	return p2p.discovery.Start(ctx)
+}
+
+// SyncBlockchain sincroniza a blockchain com peers
+func (p2p *P2PService) SyncBlockchain(ctx context.Context) error {
+	if p2p.syncService == nil {
+		return fmt.Errorf("sync service not available")
+	}
+	
+	// Iniciar o serviço de sincronização se não estiver rodando
+	if err := p2p.syncService.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start sync service: %w", err)
+	}
+	
+	return nil
+}
+
+// SetOnBlockReceived define callback para blocos recebidos
+func (p2p *P2PService) SetOnBlockReceived(callback func(*entities.Block)) {
+	p2p.mu.Lock()
+	defer p2p.mu.Unlock()
+	p2p.onBlockReceived = callback
+}
+
+// SetOnTxReceived define callback para transações recebidas
+func (p2p *P2PService) SetOnTxReceived(callback func(*entities.Transaction)) {
+	p2p.mu.Lock()
+	defer p2p.mu.Unlock()
+	p2p.onTxReceived = callback
 }
 
 // Ping envia ping para um peer
@@ -549,14 +594,6 @@ func (p2p *P2PService) deserializeBlock(serialized *SerializedBlock) (*entities.
 	}
 	
 	return block, nil
-}
-
-// IsRunning verifica se o serviço está rodando
-func (p2p *P2PService) IsRunning() bool {
-	p2p.mu.RLock()
-	defer p2p.mu.RUnlock()
-	
-	return p2p.isRunning
 }
 
 // GetDiscoveryStats retorna estatísticas de descoberta

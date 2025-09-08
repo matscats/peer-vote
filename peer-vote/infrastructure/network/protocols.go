@@ -232,8 +232,38 @@ func (pm *ProtocolManager) handleBlockSync(stream network.Stream) {
 		pm.handleBlockRangeRequest(peerID, msg, writer)
 	case MsgChainStatusReq:
 		pm.handleChainStatusRequest(peerID, msg, writer)
+	case MsgBlockGossip:
+		// CORREÇÃO: Tratar gossip de blocos no protocolo BlockSync
+		pm.handleBlockGossipMessage(peerID, msg)
 	default:
 		pm.sendError(writer, 400, "Unknown message type", string(msg.Type))
+	}
+}
+
+// handleBlockGossipMessage processa mensagem de gossip de bloco
+// Aplica SRP: responsabilidade única de processar gossip de blocos
+func (pm *ProtocolManager) handleBlockGossipMessage(peerID peer.ID, msg *Message) {
+	// Verificar se já vimos esta mensagem
+	if pm.hasSeenMessage(msg.RequestID) {
+		return
+	}
+	
+	pm.markMessageSeen(msg.RequestID)
+	
+	// Processar gossip de bloco
+	var gossipMsg BlockGossipMessage
+	if err := json.Unmarshal(msg.Data, &gossipMsg); err != nil {
+		return
+	}
+	
+	// Chamar handler se disponível
+	if pm.blockGossipHandler != nil {
+		pm.blockGossipHandler(peerID, &gossipMsg)
+	}
+	
+	// Propagar para outros peers se TTL > 0
+	if gossipMsg.TTL > 0 {
+		pm.propagateGossip(msg, peerID)
 	}
 }
 
@@ -678,9 +708,20 @@ func (pm *ProtocolManager) handleChainStatusRequest(peerID peer.ID, msg *Message
 func (pm *ProtocolManager) broadcastGossip(ctx context.Context, msgType MessageType, data interface{}) error {
 	peers := pm.host.GetConnectedPeers()
 	
+	// Escolher protocolo baseado no tipo de mensagem (CORREÇÃO CRÍTICA)
+	var protocolID protocol.ID
+	switch msgType {
+	case MsgBlockGossip:
+		protocolID = ProtocolBlockSync // Usar protocolo de blocos para gossip de blocos
+	case MsgTxGossip:
+		protocolID = ProtocolTxGossip  // Usar protocolo de transações para gossip de transações
+	default:
+		protocolID = ProtocolTxGossip  // Fallback para protocolo de transações
+	}
+	
 	for _, peerID := range peers {
 		go func(pid peer.ID) {
-			stream, err := pm.host.NewStream(ctx, pid, ProtocolTxGossip)
+			stream, err := pm.host.NewStream(ctx, pid, protocolID)
 			if err != nil {
 				return
 			}

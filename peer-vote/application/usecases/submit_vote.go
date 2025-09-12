@@ -106,9 +106,15 @@ func (uc *SubmitVoteUseCase) Execute(ctx context.Context, request *SubmitVoteReq
 	if err := uc.poaEngine.AddTransaction(ctx, transaction); err != nil {
 		return nil, fmt.Errorf("failed to add transaction to PoA pool: %w", err)
 	}
+	
+	// CORREÇÃO CRÍTICA: Propagar transação via P2P para todos os nós
+	if err := uc.poaEngine.BroadcastTransaction(ctx, transaction); err != nil {
+		// Log warning mas não falha - transação já está no pool local
+		fmt.Printf("Warning: failed to broadcast transaction: %v\n", err)
+	}
 
-	// Aguardar confirmação da transação (opcional - pode ser assíncrono)
-	blockHash, err := uc.waitForTransactionConfirmation(ctx, transaction.GetHash(), 10*time.Second)
+	// Aguardar confirmação da transação (otimizado para consenso ultra-rápido)
+	blockHash, err := uc.waitForTransactionConfirmation(ctx, transaction.GetHash(), 5*time.Second)
 	if err != nil {
 		// Log do erro mas não falha - transação está no pool
 		fmt.Printf("Warning: transaction confirmation timeout: %v\n", err)
@@ -206,8 +212,8 @@ func (uc *SubmitVoteUseCase) waitForTransactionConfirmation(ctx context.Context,
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	// Polling para verificar se a transação foi incluída em um bloco
-	ticker := time.NewTicker(500 * time.Millisecond)
+	// Polling otimizado para verificar se a transação foi incluída em um bloco
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {

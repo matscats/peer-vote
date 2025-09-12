@@ -322,6 +322,10 @@ func (vm *ValidatorManager) GetValidatorPublicKey(ctx context.Context, nodeID va
 		return nil, fmt.Errorf("validator %s not found", nodeID.ShortString())
 	}
 
+	if validator.PublicKey == nil {
+		return nil, fmt.Errorf("validator %s has no public key", nodeID.ShortString())
+	}
+
 	return validator.PublicKey, nil
 }
 

@@ -109,7 +109,7 @@ func main() {
 	
 	// Aguardar processamento final
 	fmt.Println("\n⏳ Aguardando processamento final da blockchain...")
-	time.Sleep(10 * time.Second)
+	time.Sleep(15 * time.Second)
 	
 	// === FASE 5: AUDITORIA BLOCKCHAIN ===
 	fmt.Println("\n📊 FASE 5: Auditoria completa da blockchain...")
@@ -261,6 +261,27 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		fmt.Printf("   ✅ Validador %s autorizado\n", nodes[i].ID.String())
 	}
 	fmt.Printf("✅ Todos os %d nós configurados como validadores autorizados\n", nodeCount)
+	
+	// OTIMIZAÇÃO: Configurar parâmetros do consenso para melhor performance
+	fmt.Println("⚙️ Otimizando parâmetros do consenso...")
+	for i, node := range nodes {
+		// Configurar PoA Engine para usar mempool eficientemente
+		node.PoAEngine.SetConfiguration(
+			300*time.Millisecond, // blockInterval: 300ms (ultra-rápido para processar mempool)
+			1,                    // minTxPerBlock: 1 transação (processa assim que receber)
+			5,                    // maxTxPerBlock: 5 transações por bloco (lote otimizado)
+		)
+		
+		// Configurar Round Robin com rounds ultra-rápidos
+		roundRobinScheduler := node.PoAEngine.GetRoundRobinScheduler()
+		if roundRobinScheduler != nil {
+			roundRobinScheduler.SetRoundDuration(1 * time.Second)     // 1 segundo por round (ultra-rápido)
+			roundRobinScheduler.SetTimeoutDuration(500 * time.Millisecond) // 500ms de timeout
+		}
+		
+		fmt.Printf("   ✅ Nó %d: mempool otimizado (300ms block, 1s round)\n", i+1)
+	}
+	fmt.Println("✅ Consenso otimizado para alta performance")
 	
 	return nodes
 }
@@ -511,9 +532,29 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 			candidateID = "candidate_003"
 		}
 		
-		// Selecionar nó aleatório para processar o voto (distribuição real)
-		nodeIndex := rand.Intn(len(nodes))
-		selectedNode := nodes[nodeIndex]
+		// CORREÇÃO CRÍTICA: Sempre enviar para o validador atual para usar o mempool eficientemente
+		currentValidator, err := nodes[0].PoAEngine.GetCurrentValidator(ctx)
+		if err != nil {
+			fmt.Printf("   ❌ Erro ao obter validador atual: %v\n", err)
+			continue
+		}
+		
+		// Encontrar o nó que é o validador atual
+		var selectedNode *Node
+		nodeIndex := 0
+		for i, node := range nodes {
+			if node.ID.Equals(currentValidator) {
+				selectedNode = node
+				nodeIndex = i
+				break
+			}
+		}
+		
+		// Fallback: usar primeiro nó se não encontrar o validador
+		if selectedNode == nil {
+			selectedNode = nodes[0]
+			nodeIndex = 0
+		}
 		
 		// Determinar se o voto é anônimo (50% de chance)
 		isAnonymous := rand.Float32() < 0.5
@@ -550,8 +591,8 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 			blockchainStatus, voter.Name, candidateName, anonymousStr,
 			response.TransactionHash.String(), nodeIndex+1)
 		
-		// Pequena pausa para simular votação realística
-		time.Sleep(200 * time.Millisecond)
+		// Pausa otimizada para permitir processamento do consenso
+		time.Sleep(800 * time.Millisecond)
 	}
 	
 	fmt.Printf("\n✅ %d votos processados na blockchain\n", voteCount)

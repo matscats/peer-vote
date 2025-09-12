@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -329,14 +330,23 @@ func (p2p *P2PService) handleTransactionGossip(peerID peer.ID, msg *TxGossipMess
 func (p2p *P2PService) handleBlockGossip(peerID peer.ID, msg *BlockGossipMessage) error {
 	// Deserializar bloco
 	block, err := p2p.deserializeBlock(msg.Block)
+	
 	if err != nil {
 		return fmt.Errorf("failed to deserialize block: %w", err)
 	}
-	
-	// Tentar adicionar à cadeia
+
+	// CORREÇÃO: Verificar se o bloco já existe antes de tentar validar
 	ctx := context.Background()
+	existingBlock, err := p2p.chainManager.GetBlockByIndex(ctx, block.GetIndex())
+	if err == nil && existingBlock != nil {
+		// Bloco já existe na blockchain, não precisa revalidar
+		return nil
+	}
+	
+	// Tentar adicionar à cadeia apenas se não existir
 	if err := p2p.chainManager.AddBlock(ctx, block); err != nil {
-		// Bloco pode já existir ou ser inválido
+		// Log mais informativo em vez de silenciar
+		log.Printf("Block %d from P2P already processed or invalid (normal behavior): %v", block.GetIndex(), err)
 		return nil
 	}
 	

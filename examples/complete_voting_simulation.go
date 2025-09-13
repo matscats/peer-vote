@@ -18,8 +18,8 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/infrastructure/persistence"
 )
 
-// Node representa um nó completo da rede Peer-Vote
-type Node struct {
+// ValidatorNode representa um nó validador completo da rede Peer-Vote
+type ValidatorNode struct {
 	ID           valueobjects.NodeID
 	Port         int
 	KeyPair      *services.KeyPair
@@ -41,11 +41,24 @@ type Node struct {
 	ManageElectionUC *usecases.ManageElectionUseCase
 }
 
-// Voter representa um eleitor no sistema
-type Voter struct {
-	ID       valueobjects.NodeID
-	Name     string
-	KeyPair  *services.KeyPair
+// NormalNode representa um nó normal (não-validador) que apenas participa da rede P2P e vota
+type NormalNode struct {
+	ID           valueobjects.NodeID
+	Port         int
+	KeyPair      *services.KeyPair
+	Name         string // Nome do eleitor
+	
+	// Serviços básicos necessários para votar
+	CryptoService    services.CryptographyService
+	P2PService       *network.P2PService
+	ChainManager     *blockchain.ChainManager
+	
+	// Repositórios básicos
+	BlockchainRepo   *persistence.MemoryBlockchainRepository
+	KeyRepo          *persistence.MemoryKeyRepository
+	
+	// Casos de uso limitados (apenas votação)
+	SubmitVoteUC     *usecases.SubmitVoteUseCase
 }
 
 func main() {
@@ -59,18 +72,19 @@ func main() {
 	// === FASE 1: CONFIGURAÇÃO DA REDE BLOCKCHAIN ===
 	fmt.Println("🔧 FASE 1: Configurando rede blockchain...")
 	
-	nodes := setupBlockchainNetwork(ctx, 3)
-	fmt.Printf("✅ Rede blockchain configurada com %d nós validadores\n", len(nodes))
+	// Configurar 2 nós validadores e 6 nós normais
+	validatorNodes, normalNodes := setupMixedNetwork(ctx, 2, 6)
+	fmt.Printf("✅ Rede configurada: %d nós validadores + %d nós normais\n", len(validatorNodes), len(normalNodes))
 	
-	// Inicializar consenso PoA
+	// Inicializar consenso PoA apenas nos validadores
 	fmt.Println("🏛️ Iniciando consenso Proof of Authority...")
-	startConsensus(ctx, nodes)
-	fmt.Println("✅ Consenso PoA ativo em todos os nós")
+	startConsensus(ctx, validatorNodes, normalNodes)
+	fmt.Println("✅ Consenso PoA ativo nos nós validadores")
 	
 	// === FASE 2: CRIAÇÃO DA ELEIÇÃO ===
 	fmt.Println("\n🗳️  FASE 2: Criando eleição na blockchain...")
 	
-	election := createElectionOnBlockchain(ctx, nodes[0])
+	election := createElectionOnBlockchain(ctx, validatorNodes[0])
 	fmt.Printf("✅ Eleição criada: %s\n", election.GetTitle())
 	fmt.Printf("📅 Período: %s até %s\n", 
 		election.GetStartTime().Time().Format("15:04:05"),
@@ -78,14 +92,12 @@ func main() {
 	
 	// Propagar eleição para todos os nós via P2P REAL
 	fmt.Println("🌐 Propagando eleição via P2P real...")
-	propagateElectionViaP2P(ctx, nodes, election)
+	propagateElectionViaP2P(ctx, validatorNodes, normalNodes, election)
 	fmt.Println("✅ Eleição propagada para toda a rede via P2P")
 	
-	// === FASE 3: REGISTRO DE ELEITORES ===
-	fmt.Println("\n👥 FASE 3: Registrando eleitores...")
-	
-	voters := generateVoters(ctx, 12) // 12 eleitores
-	fmt.Printf("✅ %d eleitores registrados\n", len(voters))
+	// === FASE 3: ELEITORES JÁ CONFIGURADOS ===
+	fmt.Println("\n👥 FASE 3: Eleitores já configurados como nós normais...")
+	fmt.Printf("✅ %d eleitores (nós normais) prontos para votar\n", len(normalNodes))
 	
 	// === FASE 4: PROCESSO DE VOTAÇÃO ===
 	fmt.Println("\n🗳️  FASE 4: Iniciando processo de votação...")
@@ -104,29 +116,29 @@ func main() {
 	
 	time.Sleep(1 * time.Second)
 	
-	conductVoting(ctx, nodes, voters, election)
+	conductVoting(ctx, validatorNodes, normalNodes, election)
 	fmt.Println("✅ Processo de votação concluído")
 	
 	// Aguardar processamento final
 	fmt.Println("\n⏳ Aguardando processamento final da blockchain...")
-	time.Sleep(15 * time.Second)
+	time.Sleep(3 * time.Second)
 	
 	// === FASE 5: AUDITORIA BLOCKCHAIN ===
 	fmt.Println("\n📊 FASE 5: Auditoria completa da blockchain...")
 	
-	auditResults := performBlockchainAudit(ctx, nodes[0], election)
+	auditResults := performBlockchainAudit(ctx, validatorNodes[0], election)
 	displayAuditResults(auditResults)
 	
 	// === FASE 6: RESULTADOS FINAIS ===
 	fmt.Println("\n🏆 FASE 6: Apuração e resultados finais...")
 	
-	results := calculateFinalResults(ctx, nodes[0], election)
-	displayFinalResults(results)
+	results := calculateFinalResults(ctx, validatorNodes[0], election)
+	displayFinalResults(results, len(normalNodes))
 	
 	// === FASE 7: VERIFICAÇÃO DE INTEGRIDADE ===
 	fmt.Println("\n🔍 FASE 7: Verificação de integridade da rede...")
 	
-	verifyNetworkIntegrity(ctx, nodes)
+	verifyNetworkIntegrity(ctx, validatorNodes, normalNodes)
 	
 	// === CONCLUSÃO ===
 	fmt.Println("\n🎉 === SIMULAÇÃO CONCLUÍDA COM SUCESSO! ===")
@@ -139,15 +151,26 @@ func main() {
 	fmt.Println("🚀 PEER-VOTE: O futuro da votação eletrônica!")
 }
 
-// setupBlockchainNetwork configura uma rede blockchain completa
-func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
-	nodes := make([]*Node, nodeCount)
+// setupMixedNetwork configura uma rede com nós validadores e nós normais
+func setupMixedNetwork(ctx context.Context, validatorCount, normalCount int) ([]*ValidatorNode, []*NormalNode) {
+	validatorNodes := make([]*ValidatorNode, validatorCount)
+	normalNodes := make([]*NormalNode, normalCount)
+	totalNodes := validatorCount + normalCount
 	
 	// CORREÇÃO: Criar ValidatorManager compartilhado para todos os nós
 	sharedValidatorManager := consensus.NewValidatorManager()
 	
-	for i := 0; i < nodeCount; i++ {
-		node := &Node{
+	// Nomes para os nós normais (eleitores)
+	voterNames := []string{
+		"João Silva", "Maria Santos", "Pedro Oliveira", "Ana Costa",
+		"Carlos Lima", "Lucia Ferreira", "Roberto Alves", "Patricia Rocha",
+		"Fernando Dias", "Juliana Moreira", "Ricardo Souza", "Camila Torres",
+	}
+	
+	// === CONFIGURAR NÓS VALIDADORES ===
+	fmt.Println("🔐 Configurando nós validadores...")
+	for i := 0; i < validatorCount; i++ {
+		node := &ValidatorNode{
 			Port: 9000 + i,
 		}
 		
@@ -177,7 +200,7 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		// Configurar P2P Service (NOVO - P2P REAL)
 		// Bootstrap peers: cada nó conhece os outros para conectividade garantida
 		bootstrapPeers := []string{}
-		for j := 0; j < nodeCount; j++ {
+		for j := 0; j < totalNodes; j++ {
 			if j != i { // Não incluir a si mesmo
 				bootstrapPeers = append(bootstrapPeers, fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 9000+j))
 			}
@@ -249,26 +272,96 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 			node.ChainManager,
 		)
 		
-		nodes[i] = node
+		validatorNodes[i] = node
 		
-		fmt.Printf("   Nó %d: %s (porta %d)\n", 
+		fmt.Printf("   Validador %d: %s (porta %d)\n", 
 			i+1, node.ID.String(), node.Port)
 	}
 	
-	// CORREÇÃO CRÍTICA: Adicionar todos os nós como validadores no ValidatorManager compartilhado
-	fmt.Println("🔐 Configurando validadores autorizados...")
-	for i := 0; i < nodeCount; i++ {
-		err := sharedValidatorManager.AddValidator(ctx, nodes[i].ID, nodes[i].KeyPair.PublicKey)
-		if err != nil {
-			log.Fatalf("Erro ao adicionar validador %s: %v", nodes[i].ID.String(), err)
+	// === CONFIGURAR NÓS NORMAIS (ELEITORES) ===
+	fmt.Println("👥 Configurando nós normais (eleitores)...")
+	for i := 0; i < normalCount; i++ {
+		nodeIndex := validatorCount + i
+		node := &NormalNode{
+			Port: 9000 + nodeIndex,
+			Name: voterNames[i % len(voterNames)],
 		}
-		fmt.Printf("   ✅ Validador %s autorizado\n", nodes[i].ID.String())
+		
+		// Configurar serviços básicos
+		node.CryptoService = crypto.NewECDSAService()
+		
+		// Gerar chaves para o eleitor
+		keyPair, err := node.CryptoService.GenerateKeyPair(ctx)
+		if err != nil {
+			log.Fatalf("Erro ao gerar chaves para eleitor %d: %v", i+1, err)
+		}
+		node.KeyPair = keyPair
+		node.ID = valueobjects.NewNodeID(fmt.Sprintf("voter-%d", i+1))
+		
+		// Configurar repositórios básicos
+		node.BlockchainRepo = persistence.NewMemoryBlockchainRepository(node.CryptoService).(*persistence.MemoryBlockchainRepository)
+		node.KeyRepo = persistence.NewMemoryKeyRepository()
+		
+		// Armazenar chaves do eleitor
+		if err := node.KeyRepo.StoreKeyPair(ctx, node.ID, keyPair); err != nil {
+			log.Fatalf("Erro ao armazenar chaves do eleitor %d: %v", i+1, err)
+		}
+		
+		// Configurar blockchain (apenas leitura para nós normais)
+		node.ChainManager = blockchain.NewChainManager(node.BlockchainRepo, node.CryptoService)
+		
+		// Configurar P2P Service para nós normais
+		bootstrapPeers := []string{}
+		for j := 0; j < totalNodes; j++ {
+			if j != nodeIndex { // Não incluir a si mesmo
+				bootstrapPeers = append(bootstrapPeers, fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 9000+j))
+			}
+		}
+		
+		p2pConfig := &network.P2PConfig{
+			ListenAddresses: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", node.Port)},
+			BootstrapPeers:  bootstrapPeers,
+			EnableMDNS:      true,
+			EnableDHT:       false,
+			Namespace:       "peer-vote-simulation",
+			MaxConnections:  10,
+		}
+		
+		p2pService, err := network.NewP2PService(
+			node.ChainManager,
+			nil, // Nós normais não têm PoAEngine
+			node.CryptoService,
+			p2pConfig,
+		)
+		if err != nil {
+			log.Fatalf("Erro ao criar P2PService para eleitor %d: %v", i+1, err)
+		}
+		node.P2PService = p2pService
+		
+		// CORREÇÃO: Nós normais não precisam de casos de uso próprios
+		// Eles vão enviar votos diretamente via validadores
+		node.SubmitVoteUC = nil
+		
+		normalNodes[i] = node
+		
+		fmt.Printf("   Eleitor %d: %s - %s (porta %d)\n", 
+			i+1, node.Name, node.ID.String(), node.Port)
 	}
-	fmt.Printf("✅ Todos os %d nós configurados como validadores autorizados\n", nodeCount)
 	
-	// OTIMIZAÇÃO: Configurar parâmetros do consenso para melhor performance
-	fmt.Println("⚙️ Otimizando parâmetros do consenso...")
-	for i, node := range nodes {
+	// CORREÇÃO CRÍTICA: Adicionar APENAS nós validadores no ValidatorManager
+	fmt.Println("🔐 Configurando validadores autorizados...")
+	for i := 0; i < validatorCount; i++ {
+		err := sharedValidatorManager.AddValidator(ctx, validatorNodes[i].ID, validatorNodes[i].KeyPair.PublicKey)
+		if err != nil {
+			log.Fatalf("Erro ao adicionar validador %s: %v", validatorNodes[i].ID.String(), err)
+		}
+		fmt.Printf("   ✅ Validador %s autorizado\n", validatorNodes[i].ID.String())
+	}
+	fmt.Printf("✅ %d nós validadores autorizados (Round Robin ativo)\n", validatorCount)
+	
+	// OTIMIZAÇÃO: Configurar parâmetros do consenso apenas nos validadores
+	fmt.Println("⚙️ Otimizando parâmetros do consenso nos validadores...")
+	for i, node := range validatorNodes {
 		// Configurar PoA Engine para usar mempool eficientemente
 		node.PoAEngine.SetConfiguration(
 			300*time.Millisecond, // blockInterval: 300ms (ultra-rápido para processar mempool)
@@ -283,74 +376,121 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 			roundRobinScheduler.SetTimeoutDuration(500 * time.Millisecond) // 500ms de timeout
 		}
 		
-		fmt.Printf("   ✅ Nó %d: mempool otimizado (300ms block, 1s round)\n", i+1)
+		fmt.Printf("   ✅ Validador %d: mempool otimizado (300ms block, 1s round)\n", i+1)
 	}
 	fmt.Println("✅ Consenso otimizado para alta performance")
 	
-	return nodes
+	return validatorNodes, normalNodes
 }
 
-// startConsensus inicia o consenso PoA em todos os nós
-func startConsensus(ctx context.Context, nodes []*Node) {
-	// Criar bloco gênesis em todos os nós
+// startConsensus inicia o consenso PoA nos nós validadores e conecta todos os nós via P2P
+func startConsensus(ctx context.Context, validatorNodes []*ValidatorNode, normalNodes []*NormalNode) {
+	// Criar bloco gênesis apenas no primeiro validador
 	genesisData := []byte("Peer-Vote Genesis Block - " + time.Now().Format("2006-01-02 15:04:05"))
-	genesisTx := entities.NewTransaction("GENESIS", nodes[0].ID, valueobjects.EmptyNodeID(), genesisData)
+	genesisTx := entities.NewTransaction("GENESIS", validatorNodes[0].ID, valueobjects.EmptyNodeID(), genesisData)
 	
 	// Preparar transação gênesis
 	txData := genesisTx.ToBytes()
-	txHash := nodes[0].CryptoService.HashTransaction(ctx, txData)
+	txHash := validatorNodes[0].CryptoService.HashTransaction(ctx, txData)
 	genesisTx.SetID(txHash)
 	genesisTx.SetHash(txHash)
 	
-	signature, err := nodes[0].CryptoService.Sign(ctx, txData, nodes[0].KeyPair.PrivateKey)
+	signature, err := validatorNodes[0].CryptoService.Sign(ctx, txData, validatorNodes[0].KeyPair.PrivateKey)
 	if err != nil {
 		log.Fatalf("Erro ao assinar transação gênesis: %v", err)
 	}
 	genesisTx.SetSignature(signature)
 	
-	// Criar bloco gênesis apenas no nó 1
-	if err := nodes[0].ChainManager.CreateGenesisBlock(ctx, []*entities.Transaction{genesisTx}, nodes[0].ID, nodes[0].KeyPair.PrivateKey); err != nil {
+	// Criar bloco gênesis apenas no primeiro validador
+	if err := validatorNodes[0].ChainManager.CreateGenesisBlock(ctx, []*entities.Transaction{genesisTx}, validatorNodes[0].ID, validatorNodes[0].KeyPair.PrivateKey); err != nil {
 		log.Fatalf("Erro ao criar bloco gênesis: %v", err)
 	}
 	
 	// Obter o bloco gênesis criado
-	genesisBlock, err := nodes[0].ChainManager.GetBlockByIndex(ctx, 0)
+	genesisBlock, err := validatorNodes[0].ChainManager.GetBlockByIndex(ctx, 0)
 	if err != nil {
 		log.Fatalf("Erro ao obter bloco gênesis: %v", err)
 	}
 	
-	// Propagar o mesmo bloco gênesis para todos os outros nós
-	for i := 1; i < len(nodes); i++ {
-		if err := nodes[i].ChainManager.AddBlock(ctx, genesisBlock); err != nil {
-			log.Fatalf("Erro ao adicionar bloco gênesis no nó %d: %v", i+1, err)
+	// Propagar o bloco gênesis para todos os outros validadores
+	for i := 1; i < len(validatorNodes); i++ {
+		if err := validatorNodes[i].ChainManager.AddBlock(ctx, genesisBlock); err != nil {
+			log.Fatalf("Erro ao adicionar bloco gênesis no validador %d: %v", i+1, err)
+		}
+	}
+	
+	// Propagar o bloco gênesis para todos os nós normais
+	for i := 0; i < len(normalNodes); i++ {
+		if err := normalNodes[i].ChainManager.AddBlock(ctx, genesisBlock); err != nil {
+			log.Fatalf("Erro ao adicionar bloco gênesis no nó normal %d: %v", i+1, err)
 		}
 	}
 	
 	// Iniciar serviços P2P em todos os nós PRIMEIRO
 	fmt.Println("🌐 Iniciando serviços P2P...")
-	for i, node := range nodes {
+	
+	// Iniciar P2P nos validadores
+	for i, node := range validatorNodes {
 		if err := node.P2PService.Start(ctx); err != nil {
-			log.Fatalf("Erro ao iniciar P2P no nó %d: %v", i+1, err)
+			log.Fatalf("Erro ao iniciar P2P no validador %d: %v", i+1, err)
 		}
-		fmt.Printf("   P2P iniciado no nó %d: %s\n", i+1, node.P2PService.GetListenAddresses())
+		fmt.Printf("   P2P iniciado no validador %d: %s\n", i+1, node.P2PService.GetListenAddresses())
+	}
+	
+	// Iniciar P2P nos nós normais
+	for i, node := range normalNodes {
+		if err := node.P2PService.Start(ctx); err != nil {
+			log.Fatalf("Erro ao iniciar P2P no eleitor %d: %v", i+1, err)
+		}
+		fmt.Printf("   P2P iniciado no eleitor %d: %s\n", i+1, node.P2PService.GetListenAddresses())
 	}
 	
 	// Conectar nós diretamente usando peer IDs (solução robusta)
 	fmt.Println("🔗 Conectando nós diretamente via P2P...")
 	
-	// Conectar cada nó aos outros
-	for i := 0; i < len(nodes); i++ {
-		for j := 0; j < len(nodes); j++ {
+	// Criar lista unificada de todos os nós para conectividade
+	allNodes := make([]interface{}, 0, len(validatorNodes)+len(normalNodes))
+	for _, node := range validatorNodes {
+		allNodes = append(allNodes, node)
+	}
+	for _, node := range normalNodes {
+		allNodes = append(allNodes, node)
+	}
+	
+	// Conectar todos os nós entre si
+	for i := 0; i < len(allNodes); i++ {
+		for j := 0; j < len(allNodes); j++ {
 			if i != j {
+				var sourceP2P, targetP2P *network.P2PService
+				var sourceType, targetType string
+				
+				// Determinar tipo e P2P service do nó de origem
+				if i < len(validatorNodes) {
+					sourceP2P = validatorNodes[i].P2PService
+					sourceType = "Validador"
+				} else {
+					sourceP2P = normalNodes[i-len(validatorNodes)].P2PService
+					sourceType = "Eleitor"
+				}
+				
+				// Determinar tipo e P2P service do nó de destino
+				if j < len(validatorNodes) {
+					targetP2P = validatorNodes[j].P2PService
+					targetType = "Validador"
+				} else {
+					targetP2P = normalNodes[j-len(validatorNodes)].P2PService
+					targetType = "Eleitor"
+				}
+				
 				// Obter endereços do nó de destino
-				targetAddrs := nodes[j].P2PService.GetMultiAddresses()
+				targetAddrs := targetP2P.GetMultiAddresses()
 				if len(targetAddrs) > 0 {
 					// Tentar conectar ao primeiro endereço válido
-					err := nodes[i].P2PService.ConnectToPeer(ctx, targetAddrs[0])
+					err := sourceP2P.ConnectToPeer(ctx, targetAddrs[0])
 					if err != nil {
-						fmt.Printf("   ⚠️  Nó %d → Nó %d: %v\n", i+1, j+1, err)
+						fmt.Printf("   ⚠️  %s %d → %s %d: %v\n", sourceType, i+1, targetType, j+1, err)
 					} else {
-						fmt.Printf("   ✅ Nó %d → Nó %d conectado\n", i+1, j+1)
+						fmt.Printf("   ✅ %s %d → %s %d conectado\n", sourceType, i+1, targetType, j+1)
 					}
 				}
 			}
@@ -363,19 +503,28 @@ func startConsensus(ctx context.Context, nodes []*Node) {
 	// Verificar conectividade final
 	fmt.Println("📊 Status final da rede P2P:")
 	totalConnections := 0
-	for i, node := range nodes {
+	
+	// Verificar validadores
+	for i, node := range validatorNodes {
 		peerCount, _ := node.P2PService.GetPeerCount()
-		fmt.Printf("   Nó %d: %d peers conectados\n", i+1, peerCount)
+		fmt.Printf("   Validador %d: %d peers conectados\n", i+1, peerCount)
+		totalConnections += peerCount
+	}
+	
+	// Verificar nós normais
+	for i, node := range normalNodes {
+		peerCount, _ := node.P2PService.GetPeerCount()
+		fmt.Printf("   Eleitor %d: %d peers conectados\n", i+1, peerCount)
 		totalConnections += peerCount
 	}
 	
 	fmt.Printf("✅ Rede P2P REAL: %d conexões estabelecidas\n", totalConnections/2) // Dividir por 2 pois conexões são bidirecionais
 	
-	// Iniciar consenso em todos os nós DEPOIS da conectividade P2P
-	fmt.Println("⚡ Iniciando consenso PoA...")
-	for i, node := range nodes {
+	// Iniciar consenso APENAS nos validadores DEPOIS da conectividade P2P
+	fmt.Println("⚡ Iniciando consenso PoA nos validadores...")
+	for i, node := range validatorNodes {
 		if err := node.PoAEngine.StartConsensus(ctx); err != nil {
-			log.Printf("Aviso: Erro ao iniciar consenso no nó %d: %v", i+1, err)
+			log.Printf("Aviso: Erro ao iniciar consenso no validador %d: %v", i+1, err)
 		}
 	}
 	
@@ -383,7 +532,7 @@ func startConsensus(ctx context.Context, nodes []*Node) {
 }
 
 // createElectionOnBlockchain cria uma eleição real na blockchain
-func createElectionOnBlockchain(ctx context.Context, node *Node) *entities.Election {
+func createElectionOnBlockchain(ctx context.Context, node *ValidatorNode) *entities.Election {
 	// Criar candidatos
 	candidates := []entities.Candidate{
 		{ID: "candidate_001", Name: "Ana Silva", Description: "Digitalização completa da cidade - Partido Tecnológico", VoteCount: 0},
@@ -415,7 +564,7 @@ func createElectionOnBlockchain(ctx context.Context, node *Node) *entities.Elect
 
 // propagateElectionViaP2P propaga eleição via consenso PoA REAL
 // Aplica SRP: responsabilidade única de propagar eleições via blockchain
-func propagateElectionViaP2P(ctx context.Context, nodes []*Node, election *entities.Election) {
+func propagateElectionViaP2P(ctx context.Context, validatorNodes []*ValidatorNode, normalNodes []*NormalNode, election *entities.Election) {
 	// SOLUÇÃO REAL: Aguardar que o consenso PoA propague a transação de eleição
 	// A eleição foi criada no nó 1 como uma transação blockchain
 	// O consenso PoA deve propagar essa transação para todos os nós
@@ -432,16 +581,29 @@ func propagateElectionViaP2P(ctx context.Context, nodes []*Node, election *entit
 		
 		// Verificar quantos nós têm a eleição na blockchain
 		nodesWithElection := 0
-		for i, node := range nodes {
+		totalNodes := len(validatorNodes) + len(normalNodes)
+		
+		// Verificar validadores
+		for i, node := range validatorNodes {
 			_, err := node.ChainManager.GetElectionFromBlockchain(ctx, election.GetID())
 			if err == nil {
 				nodesWithElection++
-			} else if i > 0 { // Apenas log para nós 2 e 3
-				fmt.Printf("   ⏳ Nó %d aguardando eleição... (%.0fs)\n", i+1, time.Since(start).Seconds())
+			} else if i > 0 { // Apenas log para validadores 2+
+				fmt.Printf("   ⏳ Validador %d aguardando eleição... (%.0fs)\n", i+1, time.Since(start).Seconds())
 			}
 		}
 		
-		if nodesWithElection == len(nodes) {
+		// Verificar nós normais
+		for i, node := range normalNodes {
+			_, err := node.ChainManager.GetElectionFromBlockchain(ctx, election.GetID())
+			if err == nil {
+				nodesWithElection++
+			} else {
+				fmt.Printf("   ⏳ Eleitor %d aguardando eleição... (%.0fs)\n", i+1, time.Since(start).Seconds())
+			}
+		}
+		
+		if nodesWithElection == totalNodes {
 			fmt.Printf("   ✅ Eleição sincronizada em todos os %d nós via blockchain\n", nodesWithElection)
 			return
 		}
@@ -449,18 +611,29 @@ func propagateElectionViaP2P(ctx context.Context, nodes []*Node, election *entit
 	
 	// Se timeout, forçar sincronização manual como fallback
 	fmt.Println("   ⚠️ Timeout na propagação automática - usando fallback")
-	for i := 1; i < len(nodes); i++ {
-		if err := forceElectionSync(ctx, nodes[i], election); err != nil {
-			log.Printf("Erro no fallback para nó %d: %v", i+1, err)
+	
+	// Fallback para validadores (exceto o primeiro que já tem a eleição)
+	for i := 1; i < len(validatorNodes); i++ {
+		if err := forceElectionSyncValidator(ctx, validatorNodes[i], election); err != nil {
+			log.Printf("Erro no fallback para validador %d: %v", i+1, err)
 		} else {
-			fmt.Printf("   ✅ Fallback: Eleição sincronizada no nó %d\n", i+1)
+			fmt.Printf("   ✅ Fallback: Eleição sincronizada no validador %d\n", i+1)
+		}
+	}
+	
+	// Fallback para nós normais
+	for i := 0; i < len(normalNodes); i++ {
+		if err := forceElectionSyncNormal(ctx, normalNodes[i], election); err != nil {
+			log.Printf("Erro no fallback para eleitor %d: %v", i+1, err)
+		} else {
+			fmt.Printf("   ✅ Fallback: Eleição sincronizada no eleitor %d\n", i+1)
 		}
 	}
 }
 
-// forceElectionSync força sincronização de eleição como fallback
-func forceElectionSync(ctx context.Context, node *Node, election *entities.Election) error {
-	// Fallback: recriar eleição no nó para garantir disponibilidade
+// forceElectionSyncValidator força sincronização de eleição em validador como fallback
+func forceElectionSyncValidator(ctx context.Context, node *ValidatorNode, election *entities.Election) error {
+	// Fallback: recriar eleição no validador para garantir disponibilidade
 	candidates := election.GetCandidates()
 	
 	electionReq := &usecases.CreateElectionRequest{
@@ -477,44 +650,27 @@ func forceElectionSync(ctx context.Context, node *Node, election *entities.Elect
 	
 	_, err := node.CreateElectionUC.Execute(ctx, electionReq)
 	if err != nil {
-		return fmt.Errorf("failed to sync election: %w", err)
+		return fmt.Errorf("failed to sync election on validator: %w", err)
 	}
 	
 	return nil
 }
 
-// generateVoters gera eleitores para a simulação
-func generateVoters(ctx context.Context, count int) []*Voter {
-	voters := make([]*Voter, count)
-	names := []string{
-		"João Silva", "Maria Santos", "Pedro Oliveira", "Ana Costa",
-		"Carlos Lima", "Lucia Ferreira", "Roberto Alves", "Patricia Rocha",
-		"Fernando Dias", "Juliana Moreira", "Ricardo Souza", "Camila Torres",
+// forceElectionSyncNormal força sincronização de eleição em nó normal como fallback
+func forceElectionSyncNormal(ctx context.Context, node *NormalNode, election *entities.Election) error {
+	// Nós normais não podem criar eleições, apenas sincronizar via blockchain
+	// Vamos tentar obter a eleição diretamente da blockchain
+	_, err := node.ChainManager.GetElectionFromBlockchain(ctx, election.GetID())
+	if err != nil {
+		return fmt.Errorf("failed to sync election on normal node: %w", err)
 	}
 	
-	cryptoService := crypto.NewECDSAService()
-	
-	for i := 0; i < count; i++ {
-		keyPair, err := cryptoService.GenerateKeyPair(ctx)
-		if err != nil {
-			log.Fatalf("Erro ao gerar chaves para eleitor %d: %v", i+1, err)
-		}
-		
-		voters[i] = &Voter{
-			ID:      valueobjects.NewNodeID(fmt.Sprintf("voter-%d", i+1)),
-			Name:    names[i],
-			KeyPair: keyPair,
-		}
-		
-		fmt.Printf("   Eleitor %d: %s (%s)\n", 
-			i+1, voters[i].Name, voters[i].ID.String())
-	}
-	
-	return voters
+	return nil
 }
 
+
 // conductVoting conduz o processo de votação real
-func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election *entities.Election) {
+func conductVoting(ctx context.Context, validatorNodes []*ValidatorNode, normalNodes []*NormalNode, election *entities.Election) {
 	fmt.Println("🗳️ Iniciando votação na blockchain...")
 	fmt.Println("📊 Candidatos disponíveis:")
 	for _, candidate := range election.GetCandidates() {
@@ -524,46 +680,46 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 	fmt.Println()
 	voteCount := 0
 	
-	for i, voter := range voters {
+	// Agora os nós normais são os eleitores
+	for i, voter := range normalNodes {
 		// Escolher candidato (simulação realística)
 		var candidateID string
 		switch {
-		case i < 5: // Primeiros 5 votam em Ana Silva
+		case i < 2: // Primeiros 2 votam em Ana Silva
 			candidateID = "candidate_001"
-		case i < 8: // Próximos 3 votam em Carlos Santos  
+		case i < 4: // Próximos 2 votam em Carlos Santos  
 			candidateID = "candidate_002"
 		default: // Restantes votam em Maria Oliveira
 			candidateID = "candidate_003"
 		}
 		
 		// CORREÇÃO CRÍTICA: Sempre enviar para o validador atual para usar o mempool eficientemente
-		currentValidator, err := nodes[0].PoAEngine.GetCurrentValidator(ctx)
+		currentValidator, err := validatorNodes[0].PoAEngine.GetCurrentValidator(ctx)
 		if err != nil {
 			fmt.Printf("   ❌ Erro ao obter validador atual: %v\n", err)
 			continue
 		}
 		
-		// Encontrar o nó que é o validador atual
-		var selectedNode *Node
-		nodeIndex := 0
-		for i, node := range nodes {
+		// Encontrar o validador que é o atual
+		validatorIndex := 0
+		found := false
+		for i, node := range validatorNodes {
 			if node.ID.Equals(currentValidator) {
-				selectedNode = node
-				nodeIndex = i
+				validatorIndex = i
+				found = true
 				break
 			}
 		}
 		
-		// Fallback: usar primeiro nó se não encontrar o validador
-		if selectedNode == nil {
-			selectedNode = nodes[0]
-			nodeIndex = 0
+		// Fallback: usar primeiro validador se não encontrar o atual
+		if !found {
+			validatorIndex = 0
 		}
 		
 		// Determinar se o voto é anônimo (50% de chance)
 		isAnonymous := rand.Float32() < 0.5
 		
-		// Criar requisição de voto
+		// Criar requisição de voto (o nó normal vota, mas envia para o validador processar)
 		voteReq := &usecases.SubmitVoteRequest{
 			ElectionID:  election.GetID(),
 			CandidateID: candidateID,
@@ -572,8 +728,10 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 			IsAnonymous: isAnonymous,
 		}
 		
-		// Submeter voto na blockchain
-		response, err := selectedNode.SubmitVoteUC.Execute(ctx, voteReq)
+		// CORREÇÃO: Nós normais enviam votos através dos validadores
+		// Usar o validador atual para processar o voto
+		selectedValidatorNode := validatorNodes[validatorIndex]
+		response, err := selectedValidatorNode.SubmitVoteUC.Execute(ctx, voteReq)
 		if err != nil {
 			fmt.Printf("   ❌ Erro no voto de %s: %v\n", voter.Name, err)
 			continue
@@ -591,9 +749,9 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 			blockchainStatus = "✅"
 		}
 		
-		fmt.Printf("   %s %s votou em %s%s → Hash: %s (Nó %d)\n",
+		fmt.Printf("   %s %s votou em %s%s → Hash: %s (via Validador %d)\n",
 			blockchainStatus, voter.Name, candidateName, anonymousStr,
-			response.TransactionHash.String(), nodeIndex+1)
+			response.TransactionHash.String(), validatorIndex+1)
 		
 		// Pausa otimizada para permitir processamento do consenso
 		time.Sleep(800 * time.Millisecond)
@@ -603,7 +761,33 @@ func conductVoting(ctx context.Context, nodes []*Node, voters []*Voter, election
 }
 
 // performBlockchainAudit realiza auditoria completa da blockchain
-func performBlockchainAudit(ctx context.Context, node *Node, election *entities.Election) *usecases.AuditVotesResponse {
+func performBlockchainAudit(ctx context.Context, node *ValidatorNode, election *entities.Election) *usecases.AuditVotesResponse {
+	// DEBUG: Verificar altura da blockchain antes da auditoria
+	height, err := node.BlockchainRepo.GetBlockHeight(ctx)
+	if err != nil {
+		fmt.Printf("⚠️ Erro ao obter altura da blockchain: %v\n", err)
+	} else {
+		fmt.Printf("🔍 DEBUG: Altura da blockchain: %d blocos\n", height)
+	}
+	
+	// DEBUG: Verificar blocos na blockchain
+	for i := uint64(0); i <= height; i++ {
+		block, err := node.BlockchainRepo.GetBlockByIndex(ctx, i)
+		if err != nil {
+			fmt.Printf("⚠️ Erro ao obter bloco %d: %v\n", i, err)
+			continue
+		}
+		
+		transactions := block.GetTransactions()
+		voteCount := 0
+		for _, tx := range transactions {
+			if tx.GetType() == "VOTE" {
+				voteCount++
+			}
+		}
+		fmt.Printf("🔍 DEBUG: Bloco %d - %d transações (%d votos)\n", i, len(transactions), voteCount)
+	}
+	
 	auditReq := &usecases.AuditVotesRequest{
 		ElectionID: election.GetID(),
 	}
@@ -641,7 +825,7 @@ func displayAuditResults(results *usecases.AuditVotesResponse) {
 }
 
 // calculateFinalResults calcula os resultados finais
-func calculateFinalResults(ctx context.Context, node *Node, election *entities.Election) *usecases.CountVotesResponse {
+func calculateFinalResults(ctx context.Context, node *ValidatorNode, election *entities.Election) *usecases.CountVotesResponse {
 	countReq := &usecases.CountVotesRequest{
 		ElectionID: election.GetID(),
 	}
@@ -655,7 +839,19 @@ func calculateFinalResults(ctx context.Context, node *Node, election *entities.E
 }
 
 // displayFinalResults exibe os resultados finais
-func displayFinalResults(results *usecases.CountVotesResponse) {
+func displayFinalResults(results *usecases.CountVotesResponse, totalVoters int) {
+	// Proteção contra panic se results for nil ou não tiver dados
+	if results == nil {
+		fmt.Println("❌ Erro: Não foi possível obter resultados da eleição")
+		return
+	}
+	
+	if results.Winner == nil {
+		fmt.Println("❌ Erro: Nenhum vencedor encontrado - possivelmente não há votos válidos")
+		fmt.Printf("📊 Total de votos computados: %d\n", results.TotalVotes)
+		return
+	}
+	
 	fmt.Printf("🏆 VENCEDOR: %s\n", results.Winner.CandidateName)
 	fmt.Printf("   Votos: %d (%.1f%%)\n", results.Winner.VoteCount, results.Winner.Percentage)
 	fmt.Println()
@@ -678,53 +874,70 @@ func displayFinalResults(results *usecases.CountVotesResponse) {
 	
 	fmt.Printf("\n📈 Total de votos computados: %d\n", results.TotalVotes)
 	fmt.Printf("📊 Participação: %.1f%% dos eleitores\n", 
-		float64(results.TotalVotes)/12.0*100) // 12 eleitores registrados
+		float64(results.TotalVotes)/float64(totalVoters)*100)
 }
 
 // verifyNetworkIntegrity verifica a integridade da rede
-func verifyNetworkIntegrity(ctx context.Context, nodes []*Node) {
+func verifyNetworkIntegrity(ctx context.Context, validatorNodes []*ValidatorNode, normalNodes []*NormalNode) {
 	fmt.Println("🔍 Verificando integridade da rede blockchain...")
 	
 	// Verificar altura da blockchain em todos os nós
-	heights := make([]uint64, len(nodes))
-	for i, node := range nodes {
+	allHeights := make([]uint64, 0, len(validatorNodes)+len(normalNodes))
+	
+	// Verificar validadores
+	fmt.Println("📊 Validadores:")
+	for i, node := range validatorNodes {
 		height, err := node.BlockchainRepo.GetBlockHeight(ctx)
 		if err != nil {
-			fmt.Printf("❌ Erro ao obter altura do nó %d: %v\n", i+1, err)
+			fmt.Printf("❌ Erro ao obter altura do validador %d: %v\n", i+1, err)
 			continue
 		}
-		heights[i] = height
-		fmt.Printf("   Nó %d: %d blocos\n", i+1, height)
+		allHeights = append(allHeights, height)
+		fmt.Printf("   Validador %d: %d blocos\n", i+1, height)
+	}
+	
+	// Verificar nós normais
+	fmt.Println("📊 Nós normais:")
+	for i, node := range normalNodes {
+		height, err := node.BlockchainRepo.GetBlockHeight(ctx)
+		if err != nil {
+			fmt.Printf("❌ Erro ao obter altura do eleitor %d: %v\n", i+1, err)
+			continue
+		}
+		allHeights = append(allHeights, height)
+		fmt.Printf("   Eleitor %d: %d blocos\n", i+1, height)
 	}
 	
 	// Verificar sincronização
 	allSynced := true
-	baseHeight := heights[0]
-	for i := 1; i < len(heights); i++ {
-		if heights[i] != baseHeight {
-			allSynced = false
-			break
-		}
-	}
-	
-	if allSynced {
-		fmt.Printf("✅ Todos os nós sincronizados (altura: %d)\n", baseHeight)
-	} else {
-		fmt.Println("⚠️  Nós com alturas diferentes - sincronização em andamento")
-	}
-	
-	// Verificar últimos blocos
-	fmt.Println("📦 Últimos blocos criados:")
-	for i := 0; i < min(3, int(baseHeight)); i++ {
-		blockIndex := baseHeight - uint64(i)
-		block, err := nodes[0].BlockchainRepo.GetBlockByIndex(ctx, blockIndex)
-		if err != nil {
-			continue
+	if len(allHeights) > 0 {
+		baseHeight := allHeights[0]
+		for i := 1; i < len(allHeights); i++ {
+			if allHeights[i] != baseHeight {
+				allSynced = false
+				break
+			}
 		}
 		
-		fmt.Printf("   Bloco %d: %d transações, Validador: %s\n",
-			blockIndex, len(block.GetTransactions()), 
-			block.GetValidator().String())
+		if allSynced {
+			fmt.Printf("✅ Todos os nós sincronizados (altura: %d)\n", baseHeight)
+		} else {
+			fmt.Println("⚠️  Nós com alturas diferentes - sincronização em andamento")
+		}
+		
+		// Verificar últimos blocos usando o primeiro validador
+		fmt.Println("📦 Últimos blocos criados:")
+		for i := 0; i < min(3, int(baseHeight)); i++ {
+			blockIndex := baseHeight - uint64(i)
+			block, err := validatorNodes[0].BlockchainRepo.GetBlockByIndex(ctx, blockIndex)
+			if err != nil {
+				continue
+			}
+			
+			fmt.Printf("   Bloco %d: %d transações, Validador: %s\n",
+				blockIndex, len(block.GetTransactions()), 
+				block.GetValidator().String())
+		}
 	}
 }
 

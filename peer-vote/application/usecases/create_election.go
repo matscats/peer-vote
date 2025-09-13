@@ -8,8 +8,6 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/consensus"
 )
 
 // CreateElectionRequest representa uma requisição para criar eleição
@@ -38,22 +36,22 @@ type CreateElectionResponse struct {
 type CreateElectionUseCase struct {
 	cryptoService     services.CryptographyService
 	validationService services.VotingValidationService
-	chainManager      *blockchain.ChainManager
-	poaEngine         *consensus.PoAEngine
+	blockchainService services.BlockchainService
+	consensusService  services.ConsensusService
 }
 
 // NewCreateElectionUseCase cria um novo caso de uso de criação de eleições
 func NewCreateElectionUseCase(
 	cryptoService services.CryptographyService,
 	validationService services.VotingValidationService,
-	chainManager *blockchain.ChainManager,
-	poaEngine *consensus.PoAEngine,
+	blockchainService services.BlockchainService,
+	consensusService services.ConsensusService,
 ) *CreateElectionUseCase {
 	return &CreateElectionUseCase{
 		cryptoService:     cryptoService,
 		validationService: validationService,
-		chainManager:      chainManager,
-		poaEngine:         poaEngine,
+		blockchainService: blockchainService,
+		consensusService:  consensusService,
 	}
 }
 
@@ -100,9 +98,9 @@ func (uc *CreateElectionUseCase) Execute(ctx context.Context, request *CreateEle
 		return nil, fmt.Errorf("failed to create election transaction: %w", err)
 	}
 
-	// Adicionar transação ao pool do PoA Engine
-	if err := uc.poaEngine.AddTransaction(ctx, transaction); err != nil {
-		return nil, fmt.Errorf("failed to add election transaction to PoA pool: %w", err)
+	// Adicionar transação ao pool do consenso
+	if err := uc.consensusService.AddTransaction(ctx, transaction); err != nil {
+		return nil, fmt.Errorf("failed to add election transaction to consensus pool: %w", err)
 	}
 
 	// Aguardar confirmação da transação
@@ -224,7 +222,7 @@ func (uc *CreateElectionUseCase) waitForTransactionConfirmation(ctx context.Cont
 // findTransactionInBlockchain procura uma transação na blockchain
 func (uc *CreateElectionUseCase) findTransactionInBlockchain(ctx context.Context, txHash valueobjects.Hash) (valueobjects.Hash, error) {
 	// Obter altura atual da blockchain
-	height, err := uc.chainManager.GetChainHeight(ctx)
+	height, err := uc.blockchainService.GetChainHeight(ctx)
 	if err != nil {
 		return valueobjects.EmptyHash(), err
 	}
@@ -237,7 +235,7 @@ func (uc *CreateElectionUseCase) findTransactionInBlockchain(ctx context.Context
 	}
 
 	for i := height; i >= startIndex && i <= height; i-- {
-		block, err := uc.chainManager.GetBlockByIndex(ctx, i)
+		block, err := uc.blockchainService.GetBlockByIndex(ctx, i)
 		if err != nil {
 			continue
 		}
@@ -247,7 +245,7 @@ func (uc *CreateElectionUseCase) findTransactionInBlockchain(ctx context.Context
 		for _, tx := range transactions {
 			if tx.GetHash().Equals(txHash) {
 				// Calcular hash do bloco
-				blockHash := uc.chainManager.CalculateBlockHash(ctx, block)
+				blockHash := uc.blockchainService.CalculateBlockHash(ctx, block)
 				return blockHash, nil
 			}
 		}

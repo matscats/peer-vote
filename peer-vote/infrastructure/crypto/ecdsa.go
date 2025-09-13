@@ -209,18 +209,15 @@ func (e *ECDSAService) Verify(ctx context.Context, data []byte, signature valueo
 	return ecdsa.Verify(ecdsaPublicKey, hash[:], r, s), nil
 }
 
-// Hash calcula o hash SHA-256 de dados
 func (e *ECDSAService) Hash(ctx context.Context, data []byte) valueobjects.Hash {
 	hash := sha256.Sum256(data)
 	return valueobjects.NewHash(hash[:])
 }
 
-// HashTransaction calcula o hash de uma transação
 func (e *ECDSAService) HashTransaction(ctx context.Context, txData []byte) valueobjects.Hash {
 	return e.Hash(ctx, txData)
 }
 
-// HashBlock calcula o hash de um bloco
 func (e *ECDSAService) HashBlock(ctx context.Context, blockData []byte) valueobjects.Hash {
 	return e.Hash(ctx, blockData)
 }

@@ -8,8 +8,6 @@ import (
 	"github.com/matscats/peer-vote/peer-vote/domain/entities"
 	"github.com/matscats/peer-vote/peer-vote/domain/services"
 	"github.com/matscats/peer-vote/peer-vote/domain/valueobjects"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/blockchain"
-	"github.com/matscats/peer-vote/peer-vote/infrastructure/consensus"
 )
 
 // SubmitVoteRequest representa uma requisição para submeter um voto
@@ -34,22 +32,22 @@ type SubmitVoteResponse struct {
 
 // SubmitVoteUseCase implementa o caso de uso de submissão de votos
 type SubmitVoteUseCase struct {
-	chainManager      *blockchain.ChainManager
-	poaEngine         *consensus.PoAEngine
+	blockchainService services.BlockchainService
+	consensusService  services.ConsensusService
 	cryptoService     services.CryptographyService
 	validationService services.VotingValidationService
 }
 
 // NewSubmitVoteUseCase cria um novo caso de uso de submissão de votos
 func NewSubmitVoteUseCase(
-	chainManager *blockchain.ChainManager,
-	poaEngine *consensus.PoAEngine,
+	blockchainService services.BlockchainService,
+	consensusService services.ConsensusService,
 	cryptoService services.CryptographyService,
 	validationService services.VotingValidationService,
 ) *SubmitVoteUseCase {
 	return &SubmitVoteUseCase{
-		chainManager:      chainManager,
-		poaEngine:         poaEngine,
+		blockchainService: blockchainService,
+		consensusService:  consensusService,
 		cryptoService:     cryptoService,
 		validationService: validationService,
 	}
@@ -63,7 +61,7 @@ func (uc *SubmitVoteUseCase) Execute(ctx context.Context, request *SubmitVoteReq
 	}
 
 	// Obter eleição da blockchain
-	election, err := uc.chainManager.GetElectionFromBlockchain(ctx, request.ElectionID)
+	election, err := uc.blockchainService.GetElectionFromBlockchain(ctx, request.ElectionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get election from blockchain: %w", err)
 	}
@@ -95,22 +93,15 @@ func (uc *SubmitVoteUseCase) Execute(ctx context.Context, request *SubmitVoteReq
 	voteID := uc.cryptoService.HashTransaction(ctx, voteData)
 	vote.SetID(voteID)
 
-	// === NOVA LÓGICA BLOCKCHAIN ===
 	// Criar transação blockchain com os dados do voto
 	transaction, err := uc.createVoteTransaction(ctx, vote, request.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create vote transaction: %w", err)
 	}
 
-	// Adicionar transação ao pool do PoA Engine
-	if err := uc.poaEngine.AddTransaction(ctx, transaction); err != nil {
-		return nil, fmt.Errorf("failed to add transaction to PoA pool: %w", err)
-	}
-	
-	// CORREÇÃO CRÍTICA: Propagar transação via P2P para todos os nós
-	if err := uc.poaEngine.BroadcastTransaction(ctx, transaction); err != nil {
-		// Log warning mas não falha - transação já está no pool local
-		fmt.Printf("Warning: failed to broadcast transaction: %v\n", err)
+	// Adicionar transação ao pool do consenso
+	if err := uc.consensusService.AddTransaction(ctx, transaction); err != nil {
+		return nil, fmt.Errorf("failed to add vote transaction to consensus pool: %w", err)
 	}
 
 	// Aguardar confirmação da transação (otimizado para consenso ultra-rápido)
@@ -233,7 +224,7 @@ func (uc *SubmitVoteUseCase) waitForTransactionConfirmation(ctx context.Context,
 // findTransactionInBlockchain procura uma transação na blockchain
 func (uc *SubmitVoteUseCase) findTransactionInBlockchain(ctx context.Context, txHash valueobjects.Hash) (valueobjects.Hash, error) {
 	// Obter altura atual da blockchain
-	height, err := uc.chainManager.GetChainHeight(ctx)
+	height, err := uc.blockchainService.GetChainHeight(ctx)
 	if err != nil {
 		return valueobjects.EmptyHash(), err
 	}
@@ -246,7 +237,7 @@ func (uc *SubmitVoteUseCase) findTransactionInBlockchain(ctx context.Context, tx
 	}
 
 	for i := height; i >= startIndex && i <= height; i-- {
-		block, err := uc.chainManager.GetBlockByIndex(ctx, i)
+		block, err := uc.blockchainService.GetBlockByIndex(ctx, i)
 		if err != nil {
 			continue // Pular blocos com erro
 		}
@@ -256,7 +247,7 @@ func (uc *SubmitVoteUseCase) findTransactionInBlockchain(ctx context.Context, tx
 		for _, tx := range transactions {
 			if tx.GetHash().Equals(txHash) {
 				// Calcular hash do bloco
-				blockHash := uc.chainManager.CalculateBlockHash(ctx, block)
+				blockHash := uc.blockchainService.CalculateBlockHash(ctx, block)
 				return blockHash, nil
 			}
 		}

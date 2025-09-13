@@ -15,6 +15,9 @@ type ConsensusService interface {
 	// StopConsensus para o processo de consenso
 	StopConsensus(ctx context.Context) error
 	
+	// AddTransaction adiciona uma transação ao pool de consenso
+	AddTransaction(ctx context.Context, tx *entities.Transaction) error
+	
 	// ProposeBlock propõe um novo bloco para consenso
 	ProposeBlock(ctx context.Context, block *entities.Block) error
 	

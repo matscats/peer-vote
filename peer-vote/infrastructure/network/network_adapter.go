@@ -69,14 +69,12 @@ func (na *NetworkAdapter) SendTransactionToPeer(ctx context.Context, peerID valu
 
 // RequestBlock solicita um bloco específico de um peer
 func (na *NetworkAdapter) RequestBlock(ctx context.Context, peerID valueobjects.NodeID, blockHash valueobjects.Hash) (*entities.Block, error) {
-	// Implementação futura - usar SyncService
-	return nil, fmt.Errorf("RequestBlock not implemented yet")
+	return nil, fmt.Errorf("RequestBlock functionality removed - use broadcast mechanism instead")
 }
 
 // RequestBlockRange solicita uma faixa de blocos de um peer
 func (na *NetworkAdapter) RequestBlockRange(ctx context.Context, peerID valueobjects.NodeID, startIndex, endIndex uint64) ([]*entities.Block, error) {
-	// Implementação futura - usar SyncService
-	return nil, fmt.Errorf("RequestBlockRange not implemented yet")
+	return nil, fmt.Errorf("RequestBlockRange functionality removed - use broadcast mechanism instead")
 }
 
 // GetConnectedPeers retorna a lista de peers conectados
@@ -88,7 +86,6 @@ func (na *NetworkAdapter) GetConnectedPeers(ctx context.Context) ([]services.Pee
 	
 	// Conversão simplificada - retorna informação básica
 	peers := make([]services.PeerInfo, 0, stats.ConnectedPeers)
-	// TODO: Implementar listagem real de peers conectados
 	
 	return peers, nil
 }

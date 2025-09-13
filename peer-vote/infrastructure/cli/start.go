@@ -84,15 +84,19 @@ func runStartCommand(cmd *cobra.Command, args []string) {
 	
 	// Serviços de consenso
 	validatorManager := consensus.NewValidatorManager()
-	poaEngine := consensus.NewPoAEngine(validatorManager, chainManager, cryptoService, myNodeID, keyPair.PrivateKey)
+	poaEngine := consensus.NewPoAEngine(validatorManager, chainManager, cryptoService, myNodeID, keyPair.PrivateKey, nil)
 	
 	// Serviços de domínio
 	validationService := services.NewVotingValidator(nil)
 	
+	// Criar adapters para respeitar arquitetura hexagonal
+	blockchainService := blockchain.NewBlockchainAdapter(chainManager)
+	consensusService := consensus.NewConsensusAdapter(poaEngine)
+	
 	// Casos de uso
-	createElectionUseCase := usecases.NewCreateElectionUseCase(cryptoService, validationService, chainManager, poaEngine)
+	createElectionUseCase := usecases.NewCreateElectionUseCase(cryptoService, validationService, blockchainService, consensusService)
 	manageElectionUseCase := usecases.NewManageElectionUseCase(validationService, chainManager)
-	submitVoteUseCase := usecases.NewSubmitVoteUseCase(chainManager, poaEngine, cryptoService, validationService)
+	submitVoteUseCase := usecases.NewSubmitVoteUseCase(blockchainService, consensusService, cryptoService, validationService)
 	auditVotesUseCase := usecases.NewAuditVotesUseCase(chainManager, cryptoService, validationService)
 
 	// Serviço P2P (se habilitado)

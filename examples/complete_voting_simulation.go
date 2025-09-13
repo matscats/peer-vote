@@ -219,17 +219,21 @@ func setupBlockchainNetwork(ctx context.Context, nodeCount int) []*Node {
 		// Configurar serviços de validação
 		votingValidator := services.NewVotingValidator(nil)
 		
+		// Criar adapters para respeitar arquitetura hexagonal
+		blockchainService := blockchain.NewBlockchainAdapter(node.ChainManager)
+		consensusService := consensus.NewConsensusAdapter(node.PoAEngine)
+		
 		// Configurar casos de uso
 		node.CreateElectionUC = usecases.NewCreateElectionUseCase(
 			node.CryptoService,
 			votingValidator,
-			node.ChainManager,
-			node.PoAEngine,
+			blockchainService,
+			consensusService,
 		)
 		
 		node.SubmitVoteUC = usecases.NewSubmitVoteUseCase(
-			node.ChainManager,
-			node.PoAEngine,
+			blockchainService,
+			consensusService,
 			node.CryptoService,
 			votingValidator,
 		)

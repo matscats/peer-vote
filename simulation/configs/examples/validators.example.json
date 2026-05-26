@@ -1,0 +1,16 @@
+{
+  "validators": [
+    {
+      "publicKey": "replace_with_validator_1_public_key_hex",
+      "address": "/ip4/127.0.0.1/tcp/4001"
+    },
+    {
+      "publicKey": "replace_with_validator_2_public_key_hex",
+      "address": "/ip4/127.0.0.1/tcp/4002"
+    },
+    {
+      "publicKey": "replace_with_validator_3_public_key_hex",
+      "address": "/ip4/127.0.0.1/tcp/4003"
+    }
+  ]
+}

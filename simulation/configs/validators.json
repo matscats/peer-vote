@@ -1,0 +1,16 @@
+{
+  "validators": [
+    {
+      "publicKey": "383eb67b43343e3fc1bcb711ce84fd9c13ef2f15c4025830dbc2a75666674503",
+      "address": "/ip4/127.0.0.1/tcp/4001"
+    },
+    {
+      "publicKey": "5f1a9046481483aa98f5e0a0b05e84b9505ffe82065dc9517d80e63b21a567d0",
+      "address": "/ip4/127.0.0.1/tcp/4002"
+    },
+    {
+      "publicKey": "ff30a1748f699d0af2575b1bbfbc7946f56ac9a157b674fcabf568cf4773d1c5",
+      "address": "/ip4/127.0.0.1/tcp/4003"
+    }
+  ]
+}

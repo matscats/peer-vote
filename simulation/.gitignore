@@ -1,0 +1,20 @@
+# Simulation artifacts - do not commit
+
+# Binaries
+bin/
+
+# Data directories
+data*/
+data/
+
+# Log files
+logs/
+*.log
+
+# Generated keys
+keys/voters/
+keys/validator*.key
+
+# Temporary files
+*.tmp
+*.bak

@@ -1,0 +1,15 @@
+{
+  "validator_key_path": "keys/validator3.key",
+  "validator_pub_key": "ff30a1748f699d0af2575b1bbfbc7946f56ac9a157b674fcabf568cf4773d1c5",
+  "p2p_port": 4003,
+  "p2p_address": "/ip4/127.0.0.1/tcp/4003",
+  "bootstrap_peers": [
+    "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWGjHWuHhZNXnKquzz9c2vVxgbSz9dXwJwqYHGXxL5Q8iZ"
+  ],
+  "network_id": "peer-vote-testnet",
+  "block_interval": "5s",
+  "empty_block_wait_timeout": "1s",
+  "validator_config": "configs/validators.json",
+  "data_dir": "data/data3",
+  "eligibility_list_path": "configs/eligibility.json"
+}

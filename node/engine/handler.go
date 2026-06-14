@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"peer-vote/blockchain/domain"
 )
 
 // handleVoteReceived processes a VoteReceived event
@@ -69,6 +71,14 @@ func (n *Node) handleVoteReceived(e *VoteReceived) error {
 // 5. Broadcast approval to network
 func (n *Node) handleBlockProposal(e *BlockProposalReceived) error {
 	log.Printf("Handling BlockProposalReceived event from %s for block at height %d\n", e.From, e.Block.Height())
+
+	expectedHeight := n.blockchain.Height() + 1
+	if e.Block.Height() > expectedHeight {
+		log.Printf("Received future block proposal at height %d while local height is %d; requesting sync\n",
+			e.Block.Height(), n.blockchain.Height())
+		n.bufferFutureProposal(e.Block)
+		return n.requestSync(expectedHeight, e.Block.Height()-1)
+	}
 
 	// Step 1: Validate the block proposal using consensus engine
 	if err := n.consensus.ValidateProposal(e.Block, n.blockchain); err != nil {
@@ -288,24 +298,135 @@ func (n *Node) handleBlockInterval() error {
 func (n *Node) handleSyncRequest(e *SyncRequested) error {
 	log.Printf("Handling SyncRequested event from height %d to %d\n", e.FromHeight, e.ToHeight)
 
-	// For now, we'll implement a simple sync that just logs the request
-	// Full implementation would require requesting blocks from peers
-	// This is a placeholder for the sync functionality
+	if e.FromHeight > e.ToHeight {
+		return fmt.Errorf("invalid sync range: from %d to %d", e.FromHeight, e.ToHeight)
+	}
 
-	currentHeight := n.blockchain.Height()
-	if e.ToHeight <= currentHeight {
-		log.Printf("Already synced to height %d (requested: %d)\n", currentHeight, e.ToHeight)
+	if e.FromHeight == 0 {
+		return fmt.Errorf("sync request must start after genesis")
+	}
+
+	if e.FromHeight > n.blockchain.Height() {
+		log.Printf("Cannot answer sync request from height %d; local height is %d\n",
+			e.FromHeight, n.blockchain.Height())
 		return nil
 	}
 
-	log.Printf("Sync requested but not yet implemented (current: %d, target: %d)\n", currentHeight, e.ToHeight)
+	toHeight := e.ToHeight
+	if toHeight > n.blockchain.Height() {
+		toHeight = n.blockchain.Height()
+	}
 
-	// TODO: Implement full sync logic using syncManager
-	// This would involve:
-	// 1. Request blocks from peers for heights fromHeight to toHeight
-	// 2. Validate each block
-	// 3. Apply blocks to chain and state
-	// 4. Persist blocks to storage
+	blocks := make([]*domain.Block, 0, toHeight-e.FromHeight+1)
+	for height := e.FromHeight; height <= toHeight; height++ {
+		block, err := n.blockchain.GetBlock(height)
+		if err != nil {
+			return fmt.Errorf("failed to get block %d for sync response: %w", height, err)
+		}
+		blocks = append(blocks, block)
+	}
+
+	if len(blocks) == 0 {
+		log.Printf("No blocks available for requested sync range %d-%d\n", e.FromHeight, e.ToHeight)
+		return nil
+	}
+
+	if err := n.broadcaster.BroadcastSyncResponse(blocks); err != nil {
+		return fmt.Errorf("failed to broadcast sync response: %w", err)
+	}
+
+	log.Printf("Broadcast sync response with %d blocks (%d-%d)\n",
+		len(blocks), blocks[0].Height(), blocks[len(blocks)-1].Height())
 
 	return nil
+}
+
+func (n *Node) handleSyncResponse(e *SyncResponseReceived) error {
+	if len(e.Blocks) == 0 {
+		return nil
+	}
+
+	blockByHeight := make(map[uint64]*domain.Block, len(e.Blocks))
+	var maxHeight uint64
+	for _, block := range e.Blocks {
+		if block == nil {
+			continue
+		}
+		blockByHeight[block.Height()] = block
+		if block.Height() > maxHeight {
+			maxHeight = block.Height()
+		}
+	}
+
+	if maxHeight <= n.blockchain.Height() {
+		log.Printf("Ignoring sync response from %s; local height %d is already >= response tip %d\n",
+			e.From, n.blockchain.Height(), maxHeight)
+		return nil
+	}
+
+	log.Printf("Applying sync response from %s with %d blocks up to height %d\n",
+		e.From, len(e.Blocks), maxHeight)
+
+	err := n.syncManager.Sync(maxHeight, func(height uint64) (*domain.Block, error) {
+		block, ok := blockByHeight[height]
+		if !ok {
+			return nil, fmt.Errorf("sync response missing block at height %d", height)
+		}
+		return block, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to apply sync response: %w", err)
+	}
+
+	log.Printf("Sync completed successfully at height %d\n", n.blockchain.Height())
+	n.processPendingFutureProposal()
+	return nil
+}
+
+func (n *Node) requestSync(fromHeight, toHeight uint64) error {
+	if fromHeight > toHeight {
+		return nil
+	}
+
+	if n.syncManager.IsSyncing() {
+		log.Printf("Sync already in progress; skipping request for range %d-%d\n", fromHeight, toHeight)
+		return nil
+	}
+
+	if err := n.broadcaster.BroadcastSyncRequest(fromHeight, toHeight); err != nil {
+		return fmt.Errorf("failed to broadcast sync request for range %d-%d: %w", fromHeight, toHeight, err)
+	}
+
+	log.Printf("Broadcast sync request for missing blocks %d-%d\n", fromHeight, toHeight)
+	return nil
+}
+
+func (n *Node) bufferFutureProposal(block *domain.Block) {
+	n.proposalsMu.Lock()
+	defer n.proposalsMu.Unlock()
+
+	n.pendingBlockProposals[block.Height()] = block
+	log.Printf("Buffered future proposal at height %d\n", block.Height())
+}
+
+func (n *Node) processPendingFutureProposal() {
+	nextHeight := n.blockchain.Height() + 1
+
+	n.proposalsMu.Lock()
+	block := n.pendingBlockProposals[nextHeight]
+	if block != nil {
+		delete(n.pendingBlockProposals, nextHeight)
+	}
+	n.proposalsMu.Unlock()
+
+	if block == nil {
+		return
+	}
+
+	log.Printf("Re-queueing buffered proposal at height %d after sync\n", block.Height())
+	select {
+	case n.events <- &BlockProposalReceived{Block: block, From: "sync-buffer"}:
+	default:
+		log.Printf("WARNING: event queue full, dropping buffered proposal at height %d\n", block.Height())
+	}
 }

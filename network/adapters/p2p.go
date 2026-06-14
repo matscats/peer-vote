@@ -331,6 +331,26 @@ func (n *P2PNetwork) BroadcastBlockApproval(blockHash crypto.Hash, validator cry
 	return n.publishToTopic(topicBlockApprovals, data)
 }
 
+// BroadcastSyncRequest requests a range of missing blocks from peers.
+func (n *P2PNetwork) BroadcastSyncRequest(fromHeight, toHeight uint64) error {
+	data, err := networkdomain.SerializeSyncRequest(fromHeight, toHeight)
+	if err != nil {
+		return fmt.Errorf("failed to serialize sync request: %w", err)
+	}
+
+	return n.publishToTopic(topicSyncRequests, data)
+}
+
+// BroadcastSyncResponse broadcasts blocks requested by a syncing peer.
+func (n *P2PNetwork) BroadcastSyncResponse(blocks []*domain.Block) error {
+	data, err := networkdomain.SerializeSyncResponse(blocks)
+	if err != nil {
+		return fmt.Errorf("failed to serialize sync response: %w", err)
+	}
+
+	return n.publishToTopic(topicSyncResponses, data)
+}
+
 // publishToTopic publishes data to a specific topic
 func (n *P2PNetwork) publishToTopic(topicName string, data []byte) error {
 	n.mu.RLock()
@@ -416,14 +436,28 @@ func (n *P2PNetwork) dispatchMessage(topicName string, msg *pubsub.Message) erro
 		}
 
 	case topicSyncRequests:
-		// TODO: Handle sync requests when SyncManager is implemented
-		// For now, just log
-		fmt.Printf("Received sync request from %s (not yet implemented)\n", from)
+		fromHeight, toHeight, err := networkdomain.DeserializeSyncRequest(msg.Data)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize sync request: %w", err)
+		}
+
+		for _, handler := range handlers {
+			if err := handler.HandleSyncRequest(fromHeight, toHeight, from); err != nil {
+				fmt.Printf("Handler error for sync request: %v\n", err)
+			}
+		}
 
 	case topicSyncResponses:
-		// TODO: Handle sync responses when SyncManager is implemented
-		// For now, just log
-		fmt.Printf("Received sync response from %s (not yet implemented)\n", from)
+		blocks, err := networkdomain.DeserializeSyncResponse(msg.Data)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize sync response: %w", err)
+		}
+
+		for _, handler := range handlers {
+			if err := handler.HandleSyncResponse(blocks, from); err != nil {
+				fmt.Printf("Handler error for sync response: %v\n", err)
+			}
+		}
 
 	default:
 		return fmt.Errorf("unknown topic: %s", topicName)

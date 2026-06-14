@@ -18,6 +18,12 @@ type Broadcaster interface {
 	// BroadcastBlockApproval broadcasts a block approval to all validators
 	BroadcastBlockApproval(blockHash crypto.Hash, validator crypto.PublicKey) error
 
+	// BroadcastSyncRequest requests a range of missing blocks from peers
+	BroadcastSyncRequest(fromHeight, toHeight uint64) error
+
+	// BroadcastSyncResponse broadcasts blocks requested by a syncing peer
+	BroadcastSyncResponse(blocks []*domain.Block) error
+
 	// Subscribe registers a message handler to receive network events
 	Subscribe(handler MessageHandler) error
 
@@ -39,4 +45,10 @@ type MessageHandler interface {
 
 	// HandleBlockApproval is called when a block approval is received
 	HandleBlockApproval(blockHash crypto.Hash, validator crypto.PublicKey, from string) error
+
+	// HandleSyncRequest is called when a peer requests a range of blocks
+	HandleSyncRequest(fromHeight, toHeight uint64, from string) error
+
+	// HandleSyncResponse is called when a peer provides blocks for synchronization
+	HandleSyncResponse(blocks []*domain.Block, from string) error
 }

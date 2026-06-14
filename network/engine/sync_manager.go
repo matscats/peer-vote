@@ -73,6 +73,11 @@ func (s *SyncManager) Sync(peerTipHeight uint64, blockProvider func(height uint6
 			return fmt.Errorf("block validation failed at height %d: %w", height, err)
 		}
 
+		// Apply block to state before appending, matching the finalization flow.
+		if err := s.state.ApplyBlock(block); err != nil {
+			return fmt.Errorf("failed to apply block at height %d: %w", height, err)
+		}
+
 		// Append to chain
 		if err := s.state.Chain().Append(block); err != nil {
 			return fmt.Errorf("failed to append block at height %d: %w", height, err)
@@ -81,11 +86,6 @@ func (s *SyncManager) Sync(peerTipHeight uint64, blockProvider func(height uint6
 		// Persist block
 		if err := s.blockRepo.Store(block); err != nil {
 			return fmt.Errorf("failed to persist block at height %d: %w", height, err)
-		}
-
-		// Apply block to state
-		if err := s.state.ApplyBlock(block); err != nil {
-			return fmt.Errorf("failed to apply block at height %d: %w", height, err)
 		}
 
 		// Update synced tip

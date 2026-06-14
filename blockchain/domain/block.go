@@ -439,8 +439,11 @@ func DeserializeBlock(data []byte) (*Block, error) {
 		hash:         hash,
 	}
 
-	// Validate the deserialized block
-	if err := block.Verify(); err != nil {
+	if block.Height() == 0 {
+		if err := VerifyGenesisBlock(block); err != nil {
+			return nil, fmt.Errorf("deserialized genesis block failed validation: %w", err)
+		}
+	} else if err := block.Verify(); err != nil {
 		return nil, fmt.Errorf("deserialized block failed validation: %w", err)
 	}
 

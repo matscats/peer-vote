@@ -1,205 +1,47 @@
-# Simulation Environment
+# Testes Experimentais do TCC
 
-This directory contains all the necessary files and scripts to run simulations of the blockchain voting system.
+Esta pasta contém apenas os testes usados para responder às três questões investigativas do TCC.
 
-## Directory Structure
+## Questões e Scripts
 
-```
-simulation/
-├── bin/              # Compiled binaries (bootstrap, node)
-├── configs/          # Configuration files for nodes and validators
-├── keys/             # Validator keypairs
-├── scripts/          # Test and simulation scripts
-├── data/             # Blockchain data directories (data1, data2, data3, etc.)
-├── logs/             # Node and bootstrap logs
-└── docs/             # Simulation documentation and results
-```
+| Questão | Propriedade avaliada | Script |
+| --- | --- | --- |
+| Q1 | Integridade: votos válidos são finalizados corretamente | `scripts/q1_integridade.sh` |
+| Q2 | Unicidade: voto duplicado é rejeitado | `scripts/q2_unicidade.sh` |
+| Q3 | Tolerância a falhas: operação após `crash-stop` e sincronização do nó reiniciado | `scripts/q3_falha_sincronizacao.sh` |
 
-## Quick Start
+## Como Executar
 
-### 1. Build the Binaries
-
-From the project root:
+A partir da raiz do projeto:
 
 ```bash
-go build -o simulation/bin/bootstrap cmd/bootstrap/main.go
-go build -o simulation/bin/node cmd/node/main.go
+./simulation/scripts/q1_integridade.sh
+./simulation/scripts/q2_unicidade.sh
+./simulation/scripts/q3_falha_sincronizacao.sh
 ```
 
-Or use the build script:
+Cada script compila os binários necessários, limpa `simulation/data/` e `simulation/logs/`, inicia a rede local com três validadores e imprime um resumo final.
 
-```bash
-cd simulation/scripts
-./build.sh
+## Saídas Geradas
+
+Os logs da execução ficam em:
+
+```text
+simulation/logs/
 ```
 
-### 2. Run a Multi-Node Simulation
+Os dados persistidos da blockchain ficam em:
 
-```bash
-cd simulation/scripts
-./test_with_bootstrap.sh
+```text
+simulation/data/
 ```
 
-This will:
-- Start a bootstrap node for peer discovery
-- Start 3 validator nodes
-- Show consensus in action with block proposals and finalization
+Essas pastas são artefatos de execução e não precisam ser versionadas.
 
-### 3. Submit Votes
+## Interpretação
 
-While the simulation is running, you can submit votes:
+Q1 passa quando os votos válidos submetidos são finalizados na blockchain.
 
-```bash
-cd simulation/scripts
-./submit_vote.sh voter1 candidate-a
-```
+Q2 passa quando o primeiro voto de um eleitor é finalizado e a tentativa de segundo voto é detectada como duplicada, mantendo apenas um voto finalizado para aquele eleitor.
 
-## Available Scripts
-
-### Core Scripts
-
-- **`test_with_bootstrap.sh`** - Complete multi-node test with DHT bootstrap
-- **`start_bootstrap.sh`** - Start only the bootstrap node
-- **`build.sh`** - Build all binaries
-- **`visualize.sh`** - Generate network visualization from logs (for TCC)
-
-### Testing Scripts
-
-- **`quick_test.sh`** - Quick system test with 3 votes
-- **`stress_test.sh`** - Stress test with rapid vote submission
-- **`simulate_election.sh`** - Full election simulation with multiple voters
-
-### Legacy Scripts (for reference)
-
-- `test_multi_node.sh` - Original multi-node test
-- `test_simple.sh` - Simple monitoring script
-- `test_with_mdns.sh` - mDNS-based discovery (deprecated)
-
-## Configuration Files
-
-### Node Configurations
-
-- `config1.json`, `config2.json`, `config3.json` - Individual node configs
-- `config.example.json` - Template for creating new node configs
-
-### Validator Registry
-
-- `validators.json` - List of authorized validators (public keys)
-- `validators.example.json` - Template
-
-### Voter Eligibility
-
-- `eligibility.json` - List of eligible voters
-- `eligibility.example.json` - Template
-
-## Creating New Simulations
-
-### Adding More Nodes
-
-1. Copy `config.example.json` to `config4.json`
-2. Update the port and data directory
-3. Generate a new validator key:
-   ```bash
-   ../bin/node -generate-key -key-path ../keys/validator4.key
-   ```
-4. Add the public key to `validators.json`
-5. Update the bootstrap peers in the config
-
-### Custom Scenarios
-
-Create new scripts in `simulation/scripts/` for specific test scenarios:
-
-- Different numbers of validators
-- Network partitions
-- Byzantine behavior simulation
-- Load testing with many votes
-
-## Monitoring
-
-### Real-time Logs
-
-```bash
-tail -f logs/node*.log logs/bootstrap.log
-```
-
-### Check Block Finalization
-
-```bash
-grep "finalized" logs/node*.log
-```
-
-### Check Peer Connections
-
-```bash
-grep "Connected peers" logs/node*.log
-```
-
-## Data Management
-
-### Clean All Data
-
-```bash
-rm -rf data/* logs/*
-```
-
-### Backup Simulation Results
-
-```bash
-tar -czf results_$(date +%Y%m%d_%H%M%S).tar.gz data/ logs/
-```
-
-## Troubleshooting
-
-### Nodes Not Connecting
-
-1. Check bootstrap node is running: `ps aux | grep bootstrap`
-2. Verify bootstrap address in node configs
-3. Check firewall settings
-
-### Blocks Not Finalizing
-
-1. Ensure at least 2/3 validators are running
-2. Check for errors in logs: `grep ERROR logs/node*.log`
-3. Verify validator keys match the registry
-
-### Port Conflicts
-
-If ports are already in use, update the `p2p_port` in config files.
-
-## Performance Metrics
-
-Track these metrics for your TCC:
-
-- **Block finalization time**: Time from proposal to finalization
-- **Throughput**: Votes processed per second
-- **Network latency**: Time for message propagation
-- **Consensus rounds**: Number of rounds to reach consensus
-- **Peer discovery time**: Time to connect all nodes
-
-## For TCC Documentation
-
-### Network Visualization
-
-Generate interactive visualizations of your simulation:
-
-```bash
-cd simulation/scripts
-./visualize.sh
-```
-
-This creates:
-- **`visualization.html`** - Interactive web page with network map, statistics, and timeline
-- **`network_data.json`** - Raw data for custom analysis
-
-See [VISUALIZATION.md](VISUALIZATION.md) for detailed documentation.
-
-### Documentation Files
-
-The `docs/` directory contains:
-
-- Test results and observations
-- Performance benchmarks
-- Network topology diagrams
-- Consensus flow documentation
-
-Add your simulation results here for easy reference in your thesis.
+Q3 passa quando um validador fica offline, os demais avançam a cadeia, o validador retorna, sincroniza os blocos perdidos e termina com a mesma altura e o mesmo arquivo de blocos dos demais validadores.

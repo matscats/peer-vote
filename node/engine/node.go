@@ -63,6 +63,10 @@ type Node struct {
 	pendingApprovals map[string][]Approval // Map of block hash (hex) -> list of approvals
 	approvalsMu      sync.RWMutex          // Protects pendingApprovals
 
+	// Pending block proposals received while this node is behind
+	pendingBlockProposals map[uint64]*domain.Block
+	proposalsMu           sync.RWMutex
+
 	// Synchronization
 	mu      sync.RWMutex
 	running bool
@@ -129,24 +133,25 @@ func NewNode(
 	blockTimeout := cfg.BlockInterval.Duration * 2
 
 	return &Node{
-		blockchain:       blockchain,
-		state:            state,
-		mempool:          mempool,
-		consensus:        consensus,
-		syncManager:      syncManager,
-		voteValidator:    voteValidator,
-		finalizer:        finalizer,
-		blockRepo:        blockRepo,
-		broadcaster:      broadcaster,
-		eligibility:      eligibility,
-		clock:            clock,
-		events:           make(chan Event, 100), // Buffered channel for events
-		shutdown:         make(chan struct{}),
-		config:           cfg,
-		signer:           signer,
-		blockTimeout:     blockTimeout,
-		pendingApprovals: make(map[string][]Approval),
-		running:          false,
+		blockchain:            blockchain,
+		state:                 state,
+		mempool:               mempool,
+		consensus:             consensus,
+		syncManager:           syncManager,
+		voteValidator:         voteValidator,
+		finalizer:             finalizer,
+		blockRepo:             blockRepo,
+		broadcaster:           broadcaster,
+		eligibility:           eligibility,
+		clock:                 clock,
+		events:                make(chan Event, 100), // Buffered channel for events
+		shutdown:              make(chan struct{}),
+		config:                cfg,
+		signer:                signer,
+		blockTimeout:          blockTimeout,
+		pendingApprovals:      make(map[string][]Approval),
+		pendingBlockProposals: make(map[uint64]*domain.Block),
+		running:               false,
 	}, nil
 }
 
@@ -187,9 +192,22 @@ func (n *Node) Start() error {
 	// Start event loop
 	log.Println("Starting event loop...")
 	go n.eventLoop()
+	go n.requestInitialSync()
 
 	log.Printf("Node started successfully at height %d\n", n.blockchain.Height())
 	return nil
+}
+
+func (n *Node) requestInitialSync() {
+	// Give GossipSub subscriptions and peer discovery a short window before asking
+	// for missing blocks. Peers that are not ahead will simply ignore the request.
+	time.Sleep(2 * time.Second)
+
+	currentHeight := n.blockchain.Height()
+	const syncLookahead uint64 = 1024
+	if err := n.requestSync(currentHeight+1, currentHeight+syncLookahead); err != nil {
+		log.Printf("WARNING: initial sync request failed: %v\n", err)
+	}
 }
 
 // eventLoop is the main event processing loop
@@ -277,6 +295,8 @@ func (n *Node) handleEvent(event Event) error {
 		return n.handleBlockApproval(e)
 	case *SyncRequested:
 		return n.handleSyncRequest(e)
+	case *SyncResponseReceived:
+		return n.handleSyncResponse(e)
 	default:
 		return fmt.Errorf("unknown event type: %v", event.Type())
 	}
@@ -415,6 +435,36 @@ func (n *Node) HandleBlockApproval(blockHash crypto.Hash, validator crypto.Publi
 		BlockHash: blockHash,
 		Validator: validator,
 		From:      from,
+	}
+
+	select {
+	case n.events <- event:
+		return nil
+	default:
+		return fmt.Errorf("event queue is full")
+	}
+}
+
+// HandleSyncRequest is called when a sync request is received from the network
+func (n *Node) HandleSyncRequest(fromHeight, toHeight uint64, from string) error {
+	event := &SyncRequested{
+		FromHeight: fromHeight,
+		ToHeight:   toHeight,
+	}
+
+	select {
+	case n.events <- event:
+		return nil
+	default:
+		return fmt.Errorf("event queue is full")
+	}
+}
+
+// HandleSyncResponse is called when a sync response is received from the network
+func (n *Node) HandleSyncResponse(blocks []*domain.Block, from string) error {
+	event := &SyncResponseReceived{
+		Blocks: blocks,
+		From:   from,
 	}
 
 	select {

@@ -4,7 +4,7 @@
   "p2p_port": 4001,
   "p2p_address": "/ip4/127.0.0.1/tcp/4001",
   "bootstrap_peers": [
-    "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWGjHWuHhZNXnKquzz9c2vVxgbSz9dXwJwqYHGXxL5Q8iZ"
+    "/ip4/127.0.0.1/tcp/4000/p2p/12D3KooWS3BQg9BL4JFnmj2aDckdu6SFqpciyfiTaMruy5HNbx1P"
   ],
   "network_id": "peer-vote-testnet",
   "block_interval": "5s",

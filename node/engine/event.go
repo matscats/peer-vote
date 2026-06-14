@@ -20,6 +20,7 @@ const (
 	EventBlockProposalReceived
 	EventBlockApprovalReceived
 	EventSyncRequested
+	EventSyncResponseReceived
 )
 
 // String returns the string representation of the event type
@@ -33,6 +34,8 @@ func (et EventType) String() string {
 		return "BlockApprovalReceived"
 	case EventSyncRequested:
 		return "SyncRequested"
+	case EventSyncResponseReceived:
+		return "SyncResponseReceived"
 	default:
 		return "Unknown"
 	}
@@ -81,4 +84,15 @@ type SyncRequested struct {
 // Type returns the event type
 func (e *SyncRequested) Type() EventType {
 	return EventSyncRequested
+}
+
+// SyncResponseReceived event is triggered when blocks are received for state synchronization
+type SyncResponseReceived struct {
+	Blocks []*blockchainDomain.Block
+	From   string
+}
+
+// Type returns the event type
+func (e *SyncResponseReceived) Type() EventType {
+	return EventSyncResponseReceived
 }

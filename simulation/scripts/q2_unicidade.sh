@@ -12,8 +12,9 @@ CONFIG_BACKUP_DIR=""
 export GOCACHE="${GOCACHE:-/tmp/peer-vote-go-cache}"
 
 cleanup() {
-    pkill -9 -f 'simulation/bin/bootstrap' 2>/dev/null || true
-    pkill -9 -f 'simulation/bin/node' 2>/dev/null || true
+    pkill -9 -f 'simulation/bin/bootstrap|./bin/bootstrap|bin/bootstrap' 2>/dev/null || true
+    pkill -9 -f 'simulation/bin/node|./bin/node|bin/node' 2>/dev/null || true
+    pkill -9 -f 'simulation/bin/submit-vote|submit-vote' 2>/dev/null || true
     if [ -n "$CONFIG_BACKUP_DIR" ] && [ -d "$CONFIG_BACKUP_DIR" ]; then
         cp "$CONFIG_BACKUP_DIR"/config{1,2,3}.json "$SIM_DIR/configs/"
         rm -rf "$CONFIG_BACKUP_DIR"
@@ -33,7 +34,9 @@ start_node() {
     local node_id="$1"
     local log_file="$2"
     (cd "$SIM_DIR" && exec ./bin/node -config "configs/config${node_id}.json") > "$log_file" 2>&1 &
-    echo $!
+    local pid=$!
+    disown "$pid" 2>/dev/null || true
+    echo "$pid"
 }
 
 echo "=========================================="
@@ -57,6 +60,7 @@ if [ ! -f "$SIM_DIR/keys/voters/voter001.key" ]; then
 fi
 
 "$SIM_DIR/bin/bootstrap" -port 4000 > "$SIM_DIR/logs/bootstrap.log" 2>&1 &
+disown $! 2>/dev/null || true
 sleep 3
 
 BOOTSTRAP_ADDR=$(grep "/ip4/127.0.0.1/tcp/4000/p2p/" "$SIM_DIR/logs/bootstrap.log" | head -1 | sed 's/.*\(\/ip4\/127\.0\.0\.1\/tcp\/4000\/p2p\/[^ ]*\).*/\1/')

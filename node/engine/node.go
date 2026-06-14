@@ -221,10 +221,20 @@ func (n *Node) eventLoop() {
 	ticker := n.clock.NewTicker(n.config.BlockInterval.Duration)
 	defer ticker.Stop()
 
-	// Track last block time for timeout detection
+	// Track chain progress for timeout detection
 	lastBlockTime := n.clock.Now()
+	lastBlockHeight := n.blockchain.Height()
 	timeoutTicker := n.clock.NewTicker(n.blockTimeout)
 	defer timeoutTicker.Stop()
+
+	markProgress := func() {
+		currentHeight := n.blockchain.Height()
+		if currentHeight > lastBlockHeight {
+			lastBlockHeight = currentHeight
+			lastBlockTime = n.clock.Now()
+			timeoutTicker.Reset(n.blockTimeout)
+		}
+	}
 
 	log.Printf("Event loop started with block interval: %v, timeout: %v\n", n.config.BlockInterval.Duration, n.blockTimeout)
 
@@ -244,6 +254,7 @@ func (n *Node) eventLoop() {
 				log.Printf("ERROR: Event handling failed for %s: %v\n", event.Type(), err)
 				// Continue processing other events despite error
 			}
+			markProgress()
 
 		case <-ticker.C():
 			// Block interval elapsed - time to propose a block if we're the leader
@@ -251,10 +262,7 @@ func (n *Node) eventLoop() {
 				log.Printf("ERROR: Block interval handling failed: %v\n", err)
 				// Continue to next interval despite error
 			}
-			// Reset last block time
-			lastBlockTime = n.clock.Now()
-			// Reset timeout ticker
-			timeoutTicker.Reset(n.blockTimeout)
+			markProgress()
 
 		case <-peerLogTicker.C():
 			// Log connected peers for debugging
@@ -267,13 +275,15 @@ func (n *Node) eventLoop() {
 			n.cleanupOldApprovals(60 * time.Second)
 
 		case <-timeoutTicker.C():
+			markProgress()
+
 			// Block timeout elapsed - leader may have failed to propose
 			elapsed := n.clock.Now().Sub(lastBlockTime)
 			if elapsed >= n.blockTimeout {
-				log.Printf("WARNING: Block timeout elapsed (%v), advancing round\n", elapsed)
-				// Reset consensus round to allow next leader to propose
-				n.consensus.ResetRound()
-				// Reset timeout ticker
+				n.consensus.AdvanceRound()
+				lastBlockTime = n.clock.Now()
+				log.Printf("WARNING: Block timeout elapsed (%v), advancing consensus retry round to %d\n",
+					elapsed, n.consensus.CurrentRoundOffset())
 				timeoutTicker.Reset(n.blockTimeout)
 			}
 

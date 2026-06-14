@@ -23,6 +23,7 @@ type PoAEngine struct {
 
 	blockInterval     time.Duration
 	majorityThreshold int
+	roundOffset       uint64
 }
 
 // NewPoAEngine creates a new PoAEngine with the given components
@@ -42,6 +43,7 @@ func NewPoAEngine(
 		blockBuilder:      blockBuilder,
 		blockInterval:     blockInterval,
 		majorityThreshold: majorityThreshold,
+		roundOffset:       0,
 	}
 }
 
@@ -53,7 +55,7 @@ func (e *PoAEngine) ProposeBlock(mempool *mempoolDomain.Mempool, chain *domain.C
 	nextHeight := chain.Height() + 1
 
 	// Check if we are the leader for this height
-	if !e.leaderSelector.IsLeader(nextHeight, signer.PublicKey()) {
+	if !e.leaderSelector.IsLeaderForRound(nextHeight, e.roundOffset, signer.PublicKey()) {
 		return nil, nil // Not our turn to propose
 	}
 
@@ -73,7 +75,7 @@ func (e *PoAEngine) ProposeBlock(mempool *mempoolDomain.Mempool, chain *domain.C
 	}
 
 	// Create a new round for this proposal
-	leader, _ := e.leaderSelector.SelectLeader(nextHeight)
+	leader, _ := e.leaderSelector.SelectLeaderForRound(nextHeight, e.roundOffset)
 	round := consensusDomain.NewRound(nextHeight, leader)
 	if err := round.SetProposal(block); err != nil {
 		e.stateMachine.Transition(consensusDomain.StateIdle) // Rollback state
@@ -93,11 +95,6 @@ func (e *PoAEngine) ProposeBlock(mempool *mempoolDomain.Mempool, chain *domain.C
 // Validates that the proposal comes from the correct leader and has valid structure
 // Returns error if validation fails
 func (e *PoAEngine) ValidateProposal(block *domain.Block, chain *domain.Chain) error {
-	// Verify the proposer is the designated leader for this height
-	if !e.leaderSelector.IsLeader(block.Height(), block.Proposer()) {
-		return fmt.Errorf("invalid proposer for height %d: not the designated leader", block.Height())
-	}
-
 	// Verify block structure and signature
 	if err := block.Verify(); err != nil {
 		return fmt.Errorf("block verification failed: %w", err)
@@ -115,6 +112,12 @@ func (e *PoAEngine) ValidateProposal(block *domain.Block, chain *domain.Chain) e
 		return fmt.Errorf("invalid height: expected %d, got %d", expectedHeight, block.Height())
 	}
 
+	roundOffset, err := e.roundOffsetForProposer(block.Height(), block.Proposer())
+	if err != nil {
+		return err
+	}
+	e.roundOffset = roundOffset
+
 	// Transition to validating state
 	if err := e.stateMachine.Transition(consensusDomain.StateValidating); err != nil {
 		return fmt.Errorf("failed to transition to validating state: %w", err)
@@ -125,7 +128,7 @@ func (e *PoAEngine) ValidateProposal(block *domain.Block, chain *domain.Chain) e
 	round := e.stateMachine.CurrentRound()
 	if round == nil || round.Height != block.Height() {
 		// Create a new round for this height
-		leader, _ := e.leaderSelector.SelectLeader(block.Height())
+		leader, _ := e.leaderSelector.SelectLeaderForRound(block.Height(), e.roundOffset)
 		round = consensusDomain.NewRound(block.Height(), leader)
 		if err := e.stateMachine.SetRound(round); err != nil {
 			return fmt.Errorf("failed to set round: %w", err)
@@ -196,6 +199,20 @@ func (e *PoAEngine) CheckFinalization() (bool, *domain.Block, error) {
 func (e *PoAEngine) ResetRound() {
 	e.stateMachine.Transition(consensusDomain.StateIdle)
 	e.stateMachine.SetRound(nil)
+	e.roundOffset = 0
+}
+
+// AdvanceRound moves the current height to the next retry leader after a
+// timeout, without advancing the blockchain height.
+func (e *PoAEngine) AdvanceRound() {
+	e.roundOffset++
+	e.stateMachine.Transition(consensusDomain.StateIdle)
+	e.stateMachine.SetRound(nil)
+}
+
+// CurrentRoundOffset returns the retry round used for leader selection.
+func (e *PoAEngine) CurrentRoundOffset() uint64 {
+	return e.roundOffset
 }
 
 // CurrentState returns the current consensus state
@@ -206,4 +223,20 @@ func (e *PoAEngine) CurrentState() consensusDomain.ConsensusState {
 // CurrentRound returns the current consensus round
 func (e *PoAEngine) CurrentRound() *consensusDomain.Round {
 	return e.stateMachine.CurrentRound()
+}
+
+func (e *PoAEngine) roundOffsetForProposer(height uint64, proposer crypto.PublicKey) (uint64, error) {
+	validatorCount := e.validatorRegistry.Count()
+	if validatorCount == 0 {
+		return 0, fmt.Errorf("no validators registered")
+	}
+
+	for step := uint64(0); step < uint64(validatorCount); step++ {
+		candidateOffset := e.roundOffset + step
+		if e.leaderSelector.IsLeaderForRound(height, candidateOffset, proposer) {
+			return candidateOffset, nil
+		}
+	}
+
+	return 0, fmt.Errorf("invalid proposer for height %d: not a designated leader in current retry window", height)
 }

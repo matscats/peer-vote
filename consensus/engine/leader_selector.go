@@ -23,28 +23,39 @@ func NewLeaderSelector(registry ports.ValidatorRegistry) *LeaderSelector {
 	}
 }
 
-// SelectLeader selects the leader for the given block height
-// Uses deterministic round-robin: validators[height % count]
+// SelectLeader selects the leader for the given block height.
+// Uses deterministic round-robin: validators[height % count].
 // Returns error if no validators are registered
 func (ls *LeaderSelector) SelectLeader(height uint64) (*domain.Validator, error) {
+	return ls.SelectLeaderForRound(height, 0)
+}
+
+// SelectLeaderForRound selects the leader for a block height and retry round.
+// The round offset lets the same height move to another authorized leader after
+// a timeout, without changing the block height.
+func (ls *LeaderSelector) SelectLeaderForRound(height, roundOffset uint64) (*domain.Validator, error) {
 	validators := ls.registry.GetAll()
 	if len(validators) == 0 {
 		return nil, fmt.Errorf("no validators registered")
 	}
 
-	// Deterministic round-robin selection
-	index := height % uint64(len(validators))
+	index := (height + roundOffset) % uint64(len(validators))
 	return validators[index], nil
 }
 
 // IsLeader checks if the given public key is the leader for the specified height
 // Returns true if the public key matches the selected leader, false otherwise
 func (ls *LeaderSelector) IsLeader(height uint64, pubKey crypto.PublicKey) bool {
-	leader, err := ls.SelectLeader(height)
+	return ls.IsLeaderForRound(height, 0, pubKey)
+}
+
+// IsLeaderForRound checks if the public key matches the selected leader for a
+// given height and retry round.
+func (ls *LeaderSelector) IsLeaderForRound(height, roundOffset uint64, pubKey crypto.PublicKey) bool {
+	leader, err := ls.SelectLeaderForRound(height, roundOffset)
 	if err != nil {
 		return false
 	}
 
-	// Use bytes.Equal for proper byte slice comparison
 	return bytes.Equal(leader.PublicKey(), pubKey)
 }
